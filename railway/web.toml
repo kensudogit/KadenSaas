@@ -1,0 +1,28 @@
+# ============================================================================
+# web（Next.js）。
+#
+# ★ Railway のサービス設定 → Config as Code に、このファイルのパスを指定する。
+#   指定しないと Railway はリポジトリのルートに Dockerfile を探し、
+#   「couldn't locate the dockerfile at path Dockerfile」で失敗する。
+#   この構成はルートに Dockerfile を置いていない（5 サービスあるため）。
+#
+# ★ ビルドコンテキストは常にリポジトリのルート。
+#   api / voice / web の Dockerfile すべてがその前提で書かれている。
+# ============================================================================
+
+# ★ NEXT_PUBLIC_* はビルド時に埋め込まれる。実行時の環境変数では変わらない。
+#   Railway の Variables に入れても反映されないので、
+#   サービス設定の Build → Build Arguments で渡すこと。
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "web/Dockerfile"
+
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 120
+
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+numReplicas = 1

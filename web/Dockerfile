@@ -1,24 +1,30 @@
 # ============================================================================
 # フロント（Next.js）。
 #
+# ★ ビルドコンテキストはリポジトリのルート。api / voice の Dockerfile と
+#   規約を揃えてある。揃えないと、サービスごとにコンテキストを変える設定が要り、
+#   Railway や CI のように「常にルートから」しか渡せない環境で
+#   web だけ失敗する（実際にそうなった）。
+#
+#     docker build -f web/Dockerfile .
+#
 # ★ standalone 出力を使う。node_modules を丸ごと運ぶと 500MB 級になり、
 #   デプロイのたびに転送で待つことになる。
 #
-# ★ NEXT_PUBLIC_* はビルド時に埋め込まれる。実行時の環境変数では
-#   変わらないので、環境ごとにイメージを作るか、
-#   実行時に読む形（サーバー側から配る）に変える必要がある。
+# ★ NEXT_PUBLIC_* はビルド時に埋め込まれる。実行時の環境変数では変わらない。
+#   環境ごとにイメージを作るか、サーバー側から配る形に変える必要がある。
 #   ここでは前者。ビルド引数で受け取る。
 # ============================================================================
 
 FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY web/package.json web/package-lock.json* ./
 RUN npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY web/ ./
 
 # ★ ブラウザから叩く URL なので、コンテナ名ではなく公開 URL を渡すこと
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8080

@@ -127,8 +127,9 @@ services:
 
   web:
     build:
-      context: ./web
-      dockerfile: Dockerfile
+      # ★ コンテキストはリポジトリのルート。api / voice と規約を揃える
+      context: .
+      dockerfile: web/Dockerfile
     environment:
       # ブラウザから叩く URL なので localhost。コンテナ名ではない
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8080

@@ -37,6 +37,7 @@ api/src/test
 docker-compose.yml
 db/
 infra/
+railway/
 docs/
 README.md
 kaden-saas-workspace/

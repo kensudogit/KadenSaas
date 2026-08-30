@@ -1,0 +1,32 @@
+# ============================================================================
+# voice-jobs。録音の取得・保存期限切れの削除・AI 分析。
+#
+# ★ Railway のサービス設定 → Config as Code に、このファイルのパスを指定する。
+#   指定しないと Railway はリポジトリのルートに Dockerfile を探し、
+#   「couldn't locate the dockerfile at path Dockerfile」で失敗する。
+#   この構成はルートに Dockerfile を置いていない（5 サービスあるため）。
+#
+# ★ ビルドコンテキストは常にリポジトリのルート。
+#   api / voice / web の Dockerfile すべてがその前提で書かれている。
+# ============================================================================
+
+# ★ healthcheckPath を付けない。HTTP を持たないので、付けると永久に
+#   ヘルスチェック待ちになり「Deploying のまま」になる。
+#   同じ理由でこのサービスにはドメインを生成しないこと。
+#
+# ★ 1 台だけ。複数だと同じ録音を 2 回取りに行く。
+#
+# ★ これを動かさないと静かに壊れる。録音が自前の保管先に来ないまま
+#   Twilio 側の保持期間を過ぎて消え、保存期限切れの録音も残り続ける。
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "voice/Dockerfile"
+
+[deploy]
+startCommand = "entrypoint jobs"
+
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+numReplicas = 1

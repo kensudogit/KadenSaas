@@ -271,6 +271,55 @@ cd api && ./gradlew test
 - ALB の `idle_timeout` を 3600 にしてある。既定の 60 秒だと、無音が続いた通話で Media Stream が切断される。
 - 秘密情報は Secrets Manager。**Terraform で値を設定していない**（tfstate に平文で残さないため）。作成後に CLI で投入する。
 
+### Railway
+
+ルートに `Dockerfile` を置いていない（5 サービスあるため）。Railway は既定で
+リポジトリのルートに `Dockerfile` を探すので、**サービスごとにどの Dockerfile を
+使うかを指定しないと** 次のエラーで失敗する。
+
+```
+couldn't locate the dockerfile at path Dockerfile in code archive
+```
+
+サービスは 5 つ作る。それぞれで **Settings → Build → Dockerfile Path** を設定する。
+
+| サービス | Dockerfile Path | Start Command | ドメイン |
+| --- | --- | --- | --- |
+| `api` | `api/Dockerfile` | （空。イメージの既定） | 生成する |
+| `voice-web` | `voice/Dockerfile` | `entrypoint web` | 生成する |
+| `voice-media` | `voice/Dockerfile` | `entrypoint media` | 生成する |
+| `voice-jobs` | `voice/Dockerfile` | `entrypoint jobs` | **生成しない** |
+| `web` | `web/Dockerfile` | （空） | 生成する |
+
+`railway/*.toml` に同じ内容を用意してある。Settings → **Config as Code** に
+パス（例 `railway/api.toml`）を入れれば設定ファイルから読ませられる。
+
+> **★ ただし config as code が適用されないことがある。**
+> 別プロジェクトで `railway.toml` を置いても `preDeployCommand` が実行されず、
+> 原因を特定できなかった。**確実なのは Settings に直接書く方法**なので、
+> まずそちらで動かし、config as code はうまくいけば使う、という順序で扱うこと。
+> 適用されたかどうかは「`voice-jobs` が Active になるか」（ヘルスチェックが
+> 付いていないこと）などで確認できる。
+
+#### 各サービスの変数
+
+`JWT_SECRET` は **api / voice-web / voice-media / voice-jobs で同一の値**にする。
+ずれると「api では通るのに voice で 401」になり、切り分けに時間がかかる。
+
+`voice-media` には `PORT` と `MEDIA_PORT` を**同じ値**（例 `8080`）で入れる。
+`entrypoint media` は `MEDIA_PORT` を見て bind するので、`PORT` だけ入れると
+Railway が待つポートと合わずヘルスチェックが通らない。
+
+`web` の `NEXT_PUBLIC_*` は**ビルド時に埋め込まれる**。Variables に入れても
+反映されないので、Settings → Build → Build Arguments で渡すこと。
+
+#### マイグレーション
+
+`api` の起動時に Flyway が流れる。`voice-*` は `api` が一度起動してから上げる。
+
+Railway の Postgres が配る `DATABASE_URL` は superuser なので、
+**そのまま使うと RLS が効かない**。下の「マネージド Postgres での注意」を必ず読むこと。
+
 ### ★ マネージド Postgres での注意
 
 **`db/bootstrap-roles.sql` を必ず 1 回流す。**
