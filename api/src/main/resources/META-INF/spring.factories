@@ -1,0 +1,5 @@
+# ★ EnvironmentPostProcessor は Bean より前に動く必要があるため、
+#   @Component ではなくここに登録する。Bean にすると、
+#   DataSource の生成に間に合わない。
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  com.kadensaas.config.DatabaseUrlEnvironmentPostProcessor

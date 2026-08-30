@@ -313,6 +313,23 @@ Railway が待つポートと合わずヘルスチェックが通らない。
 `web` の `NEXT_PUBLIC_*` は**ビルド時に埋め込まれる**。Variables に入れても
 反映されないので、Settings → Build → Build Arguments で渡すこと。
 
+#### DB の接続情報
+
+`DATABASE_URL` を `postgresql://user:pass@host:5432/db` の形で渡せばよい
+（Railway が Postgres を繋いだときに配る形そのまま）。
+api 側で `jdbc:postgresql://...` + ユーザー / パスワードに分解する。
+`SPRING_DATASOURCE_*` を手で 3 つに分けて設定する必要はない。
+
+`DATABASE_MIGRATOR_URL` も同じ形で渡す。未設定だと Flyway が `kaden_app` で
+マイグレーションを流すことになり、RLS が効いた状態で DDL を打って失敗する。
+
+> **★ 変数名を打ち間違えても何も言われない。**
+> `DATABSE_URL` のような綴り間違いがあると、アプリは
+> application.yml の既定値（localhost）にフォールバックして
+> 「Connection to localhost:5433 refused」で落ちる。
+> ログに出るのは接続エラーだけで、「変数名が違う」とは出ない。
+> 502 になったらまず `railway variables` で名前を確認すること。
+
 #### マイグレーション
 
 `api` の起動時に Flyway が流れる。`voice-*` は `api` が一度起動してから上げる。
