@@ -55,5 +55,22 @@ end $$;
 grant usage, create on schema public to kaden_migrator;
 grant usage on schema public to kaden_app;
 
+-- ★ スキーマとオブジェクトの「所有権」を kaden_migrator に持たせる。
+--   grant では足りない。PostgreSQL では ALTER TABLE / ALTER VIEW / DROP に
+--   所有権が要り、all privileges を持っていても所有者でなければ通らない。
+--
+--   これを忘れると、テーブルを新規作成するマイグレーションは通るのに、
+--   既存のテーブルを変更する最初のマイグレーションで
+--     ERROR: must be owner of table xxx
+--   になる。実際に本番でそうなった（V1〜V9 が superuser で適用され、
+--   その後 Flyway を kaden_migrator に切り替えたため、V10 で初めて表面化）。
+--
+--   V6 の grant usage on schema public もスキーマの所有権を要求するので、
+--   ここで先に渡しておく。
+alter schema public owner to kaden_migrator;
+
+-- ★ すでにテーブルがある DB では、これだけでは足りない。
+--   既存オブジェクトの所有者は移らないので db/transfer-ownership.sql を流すこと。
+
 \echo 'ロールを設定しました。DATABASE_URL を kaden_app、'
 \echo 'DATABASE_MIGRATOR_URL を kaden_migrator に向けてください。'

@@ -611,6 +611,38 @@ Flyway は BYPASSRLS を持つ `kaden_migrator` で流すのが正しいので�
 
 ---
 
+### must be owner of table xxx（マイグレーションが失敗する）
+
+Flyway を流すロールが、対象のテーブルの**所有者ではない**。
+
+PostgreSQL では権限（grant）と所有権（owner）が別物で、
+`all privileges` を持っていても所有者でなければ `alter` も `drop` もできない。
+`create table` は通るので、**新しいテーブルを足すマイグレーションは成功し続け、
+既存のテーブルを変更する最初のマイグレーションで初めて表面化する。**
+
+実際にそうなった。最初のデプロイで Flyway が `postgres` として走り、
+V1〜V9 のテーブルは全部 postgres 所有になった。その後 Flyway の接続を
+`kaden_migrator` に切り替えたが、所有権は移らないまま残り、
+既存テーブルを `alter` する V10 で止まった。
+
+一度だけ superuser で流す:
+
+```bash
+railway ssh -s Postgres 'psql -U postgres -d railway' < db/transfer-ownership.sql
+```
+
+> **テストを superuser で走らせている限り、この種の失敗は必ず本番で初めて見つかる。**
+> superuser は所有権の検査を素通りするため。`AbstractIntegrationTest` は
+> Flyway を `kaden_migrator` で流し、`SchemaOwnershipTest` が
+> 「テーブルの所有者が migrator であること」を固定している。
+> ここを superuser に戻すと、その 2 件が落ちる。
+
+> **GRANT は権限が足りなくてもエラーにならない。**
+> 所有者でないロールが `grant usage on schema public` を実行すると、
+> PostgreSQL は ERROR ではなく WARNING を出し、権限は付与されないまま通る。
+> 「マイグレーションは成功したのに権限が無い」が起こりうるので、
+> スキーマの所有権も `kaden_migrator` に渡しておく。
+
 ### password authentication failed for user "kaden_app" / "kaden_migrator"
 
 DB 側のロードのパスワードと、各サービスの `DATABASE_URL` が食い違っている。

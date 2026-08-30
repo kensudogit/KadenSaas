@@ -34,6 +34,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 public abstract class AbstractIntegrationTest {
 
     protected static final String APP_PASSWORD = "test_app_pw";
+    protected static final String MIGRATOR_PASSWORD = "test_mig_pw";
 
     protected static final PostgreSQLContainer<?> POSTGRES =
         new PostgreSQLContainer<>("postgres:16-alpine")
@@ -53,10 +54,14 @@ public abstract class AbstractIntegrationTest {
              Statement st = c.createStatement()) {
 
             st.execute("create role kaden_app login password '" + APP_PASSWORD + "'");
-            st.execute("create role kaden_migrator login bypassrls password 'test_mig_pw'");
+            st.execute("create role kaden_migrator login bypassrls password '"
+                + MIGRATOR_PASSWORD + "'");
             // ★ PostgreSQL 15 以降、public スキーマの CREATE は PUBLIC から外れている
             st.execute("grant usage, create on schema public to kaden_migrator");
             st.execute("grant usage on schema public to kaden_app");
+            // ★ スキーマの所有権も渡す。db/bootstrap-roles.sql と同じ状態にする。
+            //   V6 の grant usage on schema public は所有権を要求する
+            st.execute("alter schema public owner to kaden_migrator");
         } catch (Exception e) {
             throw new IllegalStateException("テスト用ロールを作成できませんでした", e);
         }
@@ -64,10 +69,18 @@ public abstract class AbstractIntegrationTest {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        // Flyway は superuser で流す（grant と revoke を含むため）
+        // ★ Flyway は kaden_migrator で流す。本番と同じロールにする。
+        //
+        //   以前はここを superuser（postgres）にしていた。superuser は
+        //   所有権の検査を素通りするので、マイグレーションが本番で
+        //   通るかどうかを一切確かめられていなかった。
+        //   実際、V10 の alter table はここでは通り、本番では
+        //     ERROR: must be owner of table call_sessions
+        //   で落ちた。テストが superuser で走っている限り、この種の失敗は
+        //   必ず本番で初めて見つかる。
         registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.flyway.user", POSTGRES::getUsername);
-        registry.add("spring.flyway.password", POSTGRES::getPassword);
+        registry.add("spring.flyway.user", () -> "kaden_migrator");
+        registry.add("spring.flyway.password", () -> MIGRATOR_PASSWORD);
 
         // ★ アプリは kaden_app。ここを postgres にすると RLS が効かず、
         //   分離のテストが常に通ってしまう
