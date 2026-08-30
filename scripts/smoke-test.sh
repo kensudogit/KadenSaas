@@ -104,6 +104,24 @@ else
 fi
 
 echo ""
+echo "テナント登録"
+echo "----------------------------------------------------------------------"
+# ★ トークンが未設定なら 404（口ごと無効）、設定済みならトークン無しで 401。
+#   どちらでも「トークン無しで作れてしまう」ことが無いのが要点
+code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST "$API/api/v1/signup"   -H "Content-Type: application/json"   -d '{"tenantName":"x","slug":"smoke-test-x","email":"a@b.co","password":"correcthorsebattery"}')
+if [ "$code" = "401" ] || [ "$code" = "404" ]; then
+  pass "トークン無しでテナントを作れない ($code)"
+else
+  ng "★ トークン無しでテナントが作れる ($code)"
+fi
+
+body=$(curl -s --max-time 10 "$API/api/v1/signup/available")
+case "$body" in
+  *enabled*) pass "登録の可否を問い合わせられる" ;;
+  *)         ng "登録の可否を問い合わせられる" ;;
+esac
+
+echo ""
 echo "認証なしのアクセス"
 echo "----------------------------------------------------------------------"
 code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$API/api/v1/customers")

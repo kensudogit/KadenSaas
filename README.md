@@ -129,6 +129,62 @@ TWILIO_ACCOUNT_SID=AC... TWILIO_AUTH_TOKEN=... TWILIO_CALLER_ID=+81... \
 
 ---
 
+## テナントの登録
+
+`POST /api/v1/signup` と `/signup` 画面。組織と、最初の管理者アカウントを作る。
+
+### 有効化
+
+**`KADEN_SIGNUP_TOKEN` を設定するまで、この機能は存在しない**（API は 404 を返す）。
+設定すると有効になり、`X-Signup-Token` ヘッダの一致を要求する。
+
+```bash
+openssl rand -hex 24     # 生成してサービスの変数に入れる
+```
+
+変数 1 つで「有効化」と「保護」を兼ねている。分けると
+「有効にしたがトークンを付け忘れて全開だった」という状態が作れてしまう。
+無効時に 403 ではなく 404 を返すのは、URL の存在を知らせないため。
+
+### なぜここが難しいか
+
+**テナントがまだ無い状態で `users` に書く**、この系で唯一の場所になる。
+
+テナントは `SET LOCAL app.tenant_id` でトランザクション開始時に注入される。
+1 つの `@Transactional` メソッドで `tenants` と `users` を両方書くと、
+users への insert がテナント未設定のトランザクションで走り、RLS の
+`with check` に弾かれる。
+
+そこで 2 トランザクションに分ける。
+
+1. `tenants` に insert（RLS が無いので context 不要）
+2. `TenantContext.set(新しい id)`
+3. `users` に insert（新しいトランザクション。ここで初めて RLS が効く）
+
+`REQUIRES_NEW` が効くよう **別 Bean**（`TenantProvisioning`）にしてある。
+同じクラス内の呼び出しは Spring のプロキシを通らない。
+
+2 に失敗すると「誰もログインできないテナント」が残り、slug も占有される。
+その場合は `tenants` を消して巻き戻す。
+
+### 実装時に踏んだ罠
+
+**JPA は null のフィールドも INSERT 文に含める。** `calling_hours_start` などを
+セットせずに保存すると、DB の default ではなく NULL が入ろうとして
+not-null 制約に弾かれる。必須列はすべて明示的に埋めること。
+
+**`DataIntegrityViolationException` を一律「識別子の重複」と報告しない。**
+最初そう書いていたため、上の not-null 違反が `slug_taken` として表示され、
+存在しないはずの slug が「すでに使われています」と出た。**嘘の理由は
+原因の特定を遅らせる。** 制約名で判定し、それ以外は隠さずログに残す。
+
+### 登録しても電話はかけられない
+
+発信には `tenant_telephony`（発信者番号）の設定が要る。番号は購入・検証が
+必要で自己申告させてよいものではないので、登録では作らない。
+
+---
+
 ## トランザクションと RLS（★ 必読）
 
 この設計でいちばん危険な失敗は **「エラーが出ないまま 0 行が返る」**。

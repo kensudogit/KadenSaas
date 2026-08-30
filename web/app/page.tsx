@@ -104,6 +104,15 @@ export default function LoginPage() {
         <button type="submit" disabled={busy} style={{ marginTop: 4 }}>
           {busy ? "確認しています…" : "ログイン"}
         </button>
+
+        {/* ★ 登録はトークンを持つ人だけが使える。導線は出しておくが、
+            トークンが未設定なら登録画面側が「受け付けていません」と案内する */}
+        <a
+          href="/signup"
+          style={{ color: "var(--accent)", fontSize: 14, textAlign: "center" }}
+        >
+          組織を登録する
+        </a>
       </form>
     </main>
   );

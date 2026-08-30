@@ -76,6 +76,8 @@ services:
       JWT_SECRET: dev-only-secret-change-me-0123456789abcdef
       VOICE_BASE_URL: http://voice:8001
       CORS_ORIGIN: http://localhost:3000
+      # ★ ローカル検証用。未設定なら登録の口ごと無効になる
+      KADEN_SIGNUP_TOKEN: local-signup-token-for-testing
     ports:
       - "8080:8080"
     depends_on:

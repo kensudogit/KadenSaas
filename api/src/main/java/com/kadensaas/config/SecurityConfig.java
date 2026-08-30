@@ -40,6 +40,11 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                // ★ テナント登録は認証前に呼ばれる。この系で唯一の
+                //   「認証なしで書き込める口」なので、SignupController 側で
+                //   トークンによる保護と、未設定時の無効化を行っている
+                .requestMatchers(HttpMethod.POST, "/api/v1/signup").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/signup/available").permitAll()
                 // ★ Stripe の webhook は署名で検証する。JWT は付かない
                 .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/billing").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

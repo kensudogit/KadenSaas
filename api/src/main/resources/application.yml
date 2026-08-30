@@ -56,6 +56,11 @@ kaden:
     ttl-minutes: ${JWT_TTL_MINUTES:120}
   cors:
     origin: ${CORS_ORIGIN:http://localhost:3000}
+  signup:
+    # ★ 未設定ならテナント登録の口ごと無効（404）。
+    #   変数 1 つで「有効化」と「保護」を兼ねる。分けると
+    #   「有効にしたがトークンを付け忘れて全開」という状態が作れてしまう
+    token: ${KADEN_SIGNUP_TOKEN:}
   # ★ 発信は voice サービスにしか投げない。ここから Twilio を直接叩かない
   voice:
     base-url: ${VOICE_BASE_URL:http://localhost:8001}
