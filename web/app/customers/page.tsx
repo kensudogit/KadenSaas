@@ -23,8 +23,10 @@
 
 import { useEffect, useState } from "react";
 import {
+  admin,
   calls,
   customers as customersApi,
+  getRole,
   getToken,
   type CustomerRow,
 } from "@/lib/api";
@@ -58,6 +60,8 @@ export default function CustomersPage() {
   const [state, setState] = useState<State>({ phase: "loading" });
   const [query, setQuery] = useState("");
   const [dialing, setDialing] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [dialError, setDialError] = useState<string | null>(null);
 
@@ -79,8 +83,32 @@ export default function CustomersPage() {
       window.location.href = "/";
       return;
     }
+    // ★ 画面の出し分けにだけ使う。権限の判定はサーバー側
+    setIsAdmin(getRole() === "admin");
     load();
   }, []);
+
+  /**
+   * ★ 投入の入口をこの画面にも置く。
+   *
+   *   これまではダッシュボードにしか無く、しかも通話が 1 件でもあると
+   *   消える作りだった。空の顧客リストを見ている人が、いちばん
+   *   「データを入れたい」と思っている場所に手段が無かった。
+   */
+  async function seed() {
+    setSeeding(true);
+    setNotice(null);
+    setDialError(null);
+    try {
+      const r = await admin.generateSampleData(false);
+      setNotice(r.message + `（顧客 ${r.customers} 件 / 通話 ${r.callSessions} 件）`);
+      await load();
+    } catch (e) {
+      setDialError(e instanceof Error ? e.message : "投入できませんでした");
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   async function dial(row: CustomerRow) {
     if (!row.phone_id) return;
@@ -194,9 +222,29 @@ export default function CustomersPage() {
           }}
         >
           <p style={{ margin: "0 0 8px" }}>顧客が登録されていません。</p>
-          <p style={{ margin: 0, fontSize: 13 }}>
-            管理者アカウントであれば、ダッシュボードからサンプルデータを投入できます。
-          </p>
+          {isAdmin ? (
+            <>
+              <p style={{ margin: "0 0 12px", fontSize: 13 }}>
+                動作確認用のサンプルを投入できます。電話番号は実在しない
+                03-1234-5xxx を使うので、誤って発信されることはありません。
+              </p>
+              <button
+                onClick={seed}
+                disabled={seeding}
+                style={{
+                  background: "var(--accent)",
+                  color: "#fff",
+                  borderColor: "transparent",
+                }}
+              >
+                {seeding ? "投入しています…" : "サンプルデータを投入"}
+              </button>
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: 13 }}>
+              管理者に顧客の登録を依頼してください。
+            </p>
+          )}
         </div>
       )}
 

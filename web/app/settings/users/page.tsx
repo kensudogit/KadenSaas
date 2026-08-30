@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  admin as adminApi,
   getRole,
   getToken,
   permissions as permissionsApi,
@@ -54,6 +55,7 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const isAdmin = myRole === "admin";
 
@@ -360,6 +362,74 @@ export default function UsersPage() {
             </div>
           </section>
         </>
+      )}
+
+      {/* -------------------------------------------------- サンプルデータ */}
+      {isAdmin && (
+        <section
+          style={{
+            border: "1px solid var(--line)",
+            borderRadius: 8,
+            padding: 16,
+            marginBottom: 30,
+          }}
+        >
+          <h2 style={{ fontSize: 16, margin: "0 0 4px" }}>サンプルデータ</h2>
+          <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 0 }}>
+            動作確認用の顧客・架電履歴を投入します。電話番号は実在しない
+            03-1234-5xxx を使うので、誤って発信されることはありません。
+          </p>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() =>
+                act(async () => {
+                  const r = await adminApi.generateSampleData(false);
+                  return {
+                    message:
+                      r.message +
+                      `（顧客 ${r.customers} 件 / 通話 ${r.callSessions} 件）`,
+                  };
+                })
+              }
+              disabled={busy}
+            >
+              {busy ? "処理中…" : "投入する"}
+            </button>
+
+            {/* ★ 削除は 2 段階。顧客も通話履歴も消えるので、
+                1 クリックで実行できる場所に置かない */}
+            {confirmClear ? (
+              <>
+                <button
+                  onClick={() =>
+                    act(async () => {
+                      const r = await adminApi.clearData();
+                      setConfirmClear(false);
+                      return { message: r.message };
+                    })
+                  }
+                  disabled={busy}
+                  style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                >
+                  本当に全部削除する
+                </button>
+                <button onClick={() => setConfirmClear(false)} disabled={busy}>
+                  やめる
+                </button>
+              </>
+            ) : (
+              <button onClick={() => setConfirmClear(true)} disabled={busy}>
+                すべて削除
+              </button>
+            )}
+          </div>
+
+          <p style={{ fontSize: 12, color: "var(--warn)", margin: "10px 0 0" }}>
+            「すべて削除」は顧客・架電履歴・キャンペーンをすべて消します。
+            本番のデータが入っている環境では使わないでください。
+          </p>
+        </section>
       )}
 
       {/* -------------------------------------------------- 権限 */}
