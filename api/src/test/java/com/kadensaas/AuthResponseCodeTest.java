@@ -102,6 +102,32 @@ class AuthResponseCodeTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("★ ブラウザで api のドメインを開いたら画面へ転送する")
+    void browserIsRedirectedToTheUi() throws Exception {
+        var response = mvc.perform(get("/").header("Accept", "text/html"))
+            .andReturn().getResponse();
+
+        assertThat(response.getStatus())
+            .as("案内するだけでは URL の取り違えは終わらない。連れて行く")
+            .isEqualTo(302);
+        assertThat(response.getHeader("Location"))
+            .as("転送先は CORS_ORIGIN から取る。別の設定を新設すると必ず古くなる")
+            .isNotBlank();
+    }
+
+    @Test
+    @DisplayName("★ ブラウザ以外（監視・curl）には転送せず JSON を返す")
+    void machinesGetJsonNotRedirect() throws Exception {
+        var response = mvc.perform(get("/").header("Accept", "application/json"))
+            .andReturn().getResponse();
+
+        assertThat(response.getStatus())
+            .as("監視に 302 を返すと「復旧した」と誤判定しうる")
+            .isEqualTo(200);
+        assertThat(response.getContentAsString()).contains("kaden-api");
+    }
+
+    @Test
     @DisplayName("★ ルートに内部情報を出さない")
     void rootLeaksNothing() throws Exception {
         String body = mvc.perform(get("/")).andReturn().getResponse().getContentAsString();
