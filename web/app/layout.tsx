@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import GuideMount from "@/components/GuideMount";
 
 export const metadata: Metadata = {
   title: "架電SaaS",
@@ -11,7 +12,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ja">
-      <body>{children}</body>
+      <body>
+        {children}
+        <GuideMount />
+      </body>
     </html>
   );
 }
