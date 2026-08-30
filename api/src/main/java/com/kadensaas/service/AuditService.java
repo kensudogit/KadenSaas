@@ -28,6 +28,18 @@ public class AuditService {
         this.jdbc = jdbc;
     }
 
+    /**
+     * ★ このオーバーロードにも MANDATORY が要る。
+     *
+     * <p>最初は 5 引数版にだけ付けていたが、ここから内部呼び出しで
+     * 呼んでいるため Spring のプロキシを通らず、注釈が効いていなかった。
+     * 結果、トランザクションの外で audit_logs に insert しようとして
+     * 「new row violates row-level security policy」で落ちた。
+     *
+     * <p>「落ちるようにした」つもりのガードが、経路によっては素通りしていた。
+     * 自己呼び出しはプロキシを通らない、を忘れると同じことが起きる。
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void record(AuthUser user, String action, String entityType, UUID entityId) {
         record(user, action, entityType, entityId, null);
     }

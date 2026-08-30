@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { kpi, type KpiRow } from "@/lib/api";
+import { admin, getRole, kpi, type KpiRow } from "@/lib/api";
 
 /** ★ 率の表示は必ずこれを通す。分母 0 のときに NaN% を出さない。 */
 function ratio(numerator: number, denominator: number): string {
@@ -46,6 +46,34 @@ export default function DashboardPage() {
     Array<{ blocked_reason: string; count: number }>
   >([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    // ★ 画面の出し分けにだけ使う。権限の判定はサーバー側。
+    //   ここを書き換えても admin の API は 403 になる
+    setIsAdmin(getRole() === "admin");
+  }, []);
+
+  async function seed(force: boolean) {
+    setSeeding(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const r = await admin.generateSampleData(force);
+      setNotice(
+        `${r.message}（顧客 ${r.customers} 件 / 通話 ${r.callSessions} 件 / ` +
+          `架電対象 ${r.callTargets} 件 / 再勧誘拒否 ${r.dncEntries} 件）`,
+      );
+      window.location.reload();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "投入に失敗しました";
+      setError(message);
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   useEffect(() => {
     Promise.all([kpi.summary(), kpi.hourly(), kpi.blocked()])
@@ -89,6 +117,39 @@ export default function DashboardPage() {
       {error && (
         <div role="alert" style={{ color: "var(--danger)" }}>
           {error}
+        </div>
+      )}
+
+      {notice && (
+        <div style={{ color: "var(--ok)", fontSize: 14 }}>{notice}</div>
+      )}
+
+      <nav style={{ display: "flex", gap: 14, fontSize: 14, marginBottom: 8 }}>
+        <a href="/customers" style={{ color: "var(--accent)" }}>顧客</a>
+        <a href="/operator" style={{ color: "var(--accent)" }}>架電</a>
+      </nav>
+
+      {/* ★ データが 1 件も無いときだけ投入を促す。数字が全部 0 の画面は
+          「壊れている」のか「まだ何もしていない」のか区別が付かない */}
+      {isAdmin && rows.length === 0 && (
+        <div
+          style={{
+            border: "1px dashed var(--line)",
+            borderRadius: 8,
+            padding: "16px 18px",
+            marginBottom: 18,
+          }}
+        >
+          <p style={{ margin: "0 0 4px", fontSize: 14 }}>
+            通話データがまだありません。
+          </p>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--muted)" }}>
+            動作確認用のサンプルを投入できます。電話番号は実在しない
+            03-1234-5xxx を使うので、誤って発信されることはありません。
+          </p>
+          <button onClick={() => seed(false)} disabled={seeding}>
+            {seeding ? "投入しています…" : "サンプルデータを投入"}
+          </button>
         </div>
       )}
 

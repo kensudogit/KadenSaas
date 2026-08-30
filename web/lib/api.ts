@@ -50,8 +50,20 @@ export function setToken(token: string): void {
   window.localStorage.setItem(TOKEN_KEY, token);
 }
 
+const ROLE_KEY = "kaden.role";
+
+export function setRole(role: Role): void {
+  window.localStorage.setItem(ROLE_KEY, role);
+}
+
+export function getRole(): Role | null {
+  if (typeof window === "undefined") return null;
+  return (window.localStorage.getItem(ROLE_KEY) as Role) ?? null;
+}
+
 export function clearToken(): void {
   window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem("kaden.role");
 }
 
 // ---------------------------------------------------------------- 共通
@@ -106,6 +118,9 @@ export async function login(
     body: JSON.stringify({ tenantSlug, email, password }),
   });
   setToken(session.token);
+  // ★ 画面の出し分けにだけ使う。権限の判定はサーバー側が行う。
+  //   ここを書き換えても admin の API は 403 になる
+  setRole(session.user.role);
   return session;
 }
 
@@ -226,6 +241,31 @@ export const customers = {
         status: string;
       }>
     >(`/api/v1/customers${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+};
+
+/**
+ * 管理者用。
+ *
+ * ★ サンプルデータは実在しない電話番号（03-1234-5xxx）で作られる。
+ *   デモデータから本当に発信してしまう事故を防ぐため。
+ */
+export const admin = {
+  generateSampleData: (force = false) =>
+    api<{
+      customers: number;
+      campaigns: number;
+      callTargets: number;
+      callSessions: number;
+      dncEntries: number;
+      callbacks: number;
+      message: string;
+    }>(`/api/v1/admin/sample-data?force=${force}`, { method: "POST" }),
+
+  clearData: () =>
+    api<{ ok: boolean; message: string }>(
+      "/api/v1/admin/sample-data?confirm=true",
+      { method: "DELETE" },
+    ),
 };
 
 export const dnc = {
