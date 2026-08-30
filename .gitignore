@@ -15,7 +15,16 @@ build/
 .gradle/
 target/
 *.jar
-!gradle/wrapper/gradle-wrapper.jar
+# ★ Gradle wrapper の jar はコミットする。これが無いと ./gradlew が動かず、
+#   手元に Gradle が入っていない環境（CI・Docker ビルド）でビルドできない。
+#
+# ★ 先頭に **/ を付けること。スラッシュを含むパターンは .gitignore からの
+#   相対で「そのパスちょうど」にしか効かないため、
+#   !gradle/wrapper/... と書くとルート直下しか除外解除されず、
+#   api/gradle/wrapper/... は *.jar に飲まれたまま無視される。
+#   実際にこれで Railway のビルドが
+#   「Unable to access jarfile .../gradle-wrapper.jar」で失敗した。
+!**/gradle/wrapper/gradle-wrapper.jar
 __pycache__/
 *.pyc
 *.egg-info/
