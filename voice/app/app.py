@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -22,13 +23,27 @@ from fastapi.responses import JSONResponse
 from . import logger
 from .api import internal, recordings
 from .config import CORS_ORIGIN, TELEPHONY_ENABLED
-from .db.engine import close_pool, init_pool, pool
+from .db.engine import DatabaseCredentialsRejected, close_pool, init_pool, pool
 from .telephony import routes as telephony_routes
+
+
+# ★ 設定の誤りで落ちたときの待ち時間。待たずに落ちるとコンテナが
+#   秒単位で再起動し、ログが traceback で埋まる（実際にそうなった）
+CONFIG_ERROR_COOLDOWN_SECONDS = 60
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await init_pool()
+    try:
+        await init_pool()
+    except DatabaseCredentialsRejected as e:
+        # ★ traceback ではなく、直す場所を出す。そして待ってから落ちる。
+        #   待たずに落ちるとコンテナが秒単位で再起動し、ログが埋まって
+        #   肝心のこの 1 行が読めなくなる
+        logger.error("起動できません（設定の誤り）", reason=str(e))
+        await asyncio.sleep(CONFIG_ERROR_COOLDOWN_SECONDS)
+        raise SystemExit(1) from None
+
     logger.info(
         "voice サービスを起動しました",
         telephony_enabled=TELEPHONY_ENABLED,

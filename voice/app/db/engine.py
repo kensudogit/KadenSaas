@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import re
 from collections.abc import AsyncIterator
 from uuid import UUID
 
@@ -28,22 +30,90 @@ class RlsNotEnforced(RuntimeError):
     """接続ロールが RLS を素通りする状態。production では起動を止める。"""
 
 
+class DatabaseCredentialsRejected(RuntimeError):
+    """DATABASE_URL の資格情報が DB に拒否された。再試行しても直らない。"""
+
+
+# ★ 一時的な接続失敗（DB の再起動・ネットワークの瞬断）は待てば直る。
+#   最大でこの回数まで、指数的に間隔を空けて待つ。
+_CONNECT_ATTEMPTS = 5
+_CONNECT_BACKOFF_CAP_SECONDS = 30
+
+
 async def init_pool() -> None:
+    """DB プールを用意する。
+
+    ★ 「待てば直る失敗」と「待っても直らない失敗」を分ける。
+      一時的な接続失敗は間隔を空けて再試行する。パスワード違いのような
+      設定の誤りは即座に諦め、何を直せばよいかを 1 行で伝える。
+
+    ★ 設定の誤りで生の traceback を出さない。以前はここで
+      asyncpg の 40 行のスタックがそのまま出て、しかもコンテナが
+      1.3 秒ごとに再起動していた。ログは埋まり、PostgreSQL 側には
+      認証失敗が秒間 1 回ずつ記録され続け、肝心の
+      「どの変数を直せばよいか」はどこにも書かれていなかった。
+    """
     global _pool
     if _pool is not None:
         return
-    _pool = await asyncpg.create_pool(
-        dsn=DATABASE_URL,
-        min_size=1,
-        max_size=10,
-        # ★ 文の準備をキャッシュしない。pgbouncer の transaction pooling の
-        #   後ろに置かれたときに、準備済み文が別の接続で使われて壊れる
-        statement_cache_size=0,
-    )
+
+    for attempt in range(1, _CONNECT_ATTEMPTS + 1):
+        try:
+            _pool = await asyncpg.create_pool(
+                dsn=DATABASE_URL,
+                min_size=1,
+                max_size=10,
+                # ★ 文の準備をキャッシュしない。pgbouncer の transaction pooling の
+                #   後ろに置かれたときに、準備済み文が別の接続で使われて壊れる
+                statement_cache_size=0,
+            )
+            break
+
+        except asyncpg.InvalidAuthorizationSpecificationError as e:
+            # ★ 待っても直らない。パスワードかロール名が実際の DB と食い違っている。
+            #   資格情報は DATABASE_URL（各サービス）と DB のロードの
+            #   2 か所にあり、片方だけ変えるとここに出る
+            raise DatabaseCredentialsRejected(
+                f"DATABASE_URL の資格情報が DB に拒否されました（{_describe_dsn()}）。"
+                "DB 側のロードのパスワードを変えたなら、それを使う"
+                "すべてのサービスの DATABASE_URL も同時に更新してください"
+            ) from e
+
+        except asyncpg.InvalidCatalogNameError as e:
+            raise DatabaseCredentialsRejected(
+                f"DATABASE_URL のデータベースが存在しません（{_describe_dsn()}）"
+            ) from e
+
+        except (OSError, asyncpg.CannotConnectNowError) as e:
+            # ★ 待てば直る類。DB の再起動中やネットワークの瞬断
+            if attempt == _CONNECT_ATTEMPTS:
+                raise
+            delay = min(2**attempt, _CONNECT_BACKOFF_CAP_SECONDS)
+            logger.warn(
+                "DB に接続できません。待って再試行します",
+                attempt=attempt,
+                of=_CONNECT_ATTEMPTS,
+                retry_in_seconds=delay,
+                error=str(e),
+            )
+            await asyncio.sleep(delay)
+
     async with _pool.acquire() as conn:
         await conn.fetchval("select 1")
         await assert_rls_enforced(conn)
     logger.info("voice: DB プールを初期化しました")
+
+
+def _describe_dsn() -> str:
+    """接続先をログに出せる形にする。
+
+    ★ パスワードは絶対に含めない。ログは共有されるし長く残る。
+      ロール名とホストだけあれば、どの変数を直せばよいかは分かる。
+    """
+    m = re.match(r"postgres(?:ql)?://([^:/?#]+)(?::[^@]*)?@([^/?#]+)", DATABASE_URL or "")
+    if not m:
+        return "DATABASE_URL の形式が不正です"
+    return f"role={m.group(1)} host={m.group(2)}"
 
 
 async def close_pool() -> None:

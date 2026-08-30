@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import time
 from datetime import UTC, datetime
 
 import httpx
@@ -35,7 +36,13 @@ from ..config import (
     TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN,
 )
-from ..db.engine import close_pool, init_pool, system_tx, tenant_tx
+from ..db.engine import (
+    DatabaseCredentialsRejected,
+    close_pool,
+    init_pool,
+    system_tx,
+    tenant_tx,
+)
 
 # 1 サイクルで扱う件数。多すぎると 1 回のサイクルが長引き、
 # 少なすぎると溜まる。実測して調整する前提の初期値
@@ -326,6 +333,18 @@ async def main_async(interval: int | None) -> None:
         await close_pool()
 
 
+# ★ 設定の誤りで落ちたとき、すぐ終了せずこれだけ待つ。
+#
+#   このコンテナは異常終了すると即座に再起動される。待たずに落ちると
+#   1.3 秒間隔で再起動し続け、ログが traceback で埋まるうえ、
+#   PostgreSQL 側にも認証失敗が秒間 1 回ずつ記録され続ける
+#   （実際にそうなった）。総当たり攻撃と区別も付かない。
+#
+#   設定を直すのは人間なので、急いで再試行しても意味がない。
+#   間隔を空けて、ログを読める状態に保つほうが早く復旧できる。
+CONFIG_ERROR_COOLDOWN_SECONDS = 60
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="定期ジョブ")
     parser.add_argument(
@@ -337,7 +356,19 @@ def main() -> None:
         help="秒間隔で回し続ける。省略すると 1 回だけ実行する",
     )
     args = parser.parse_args()
-    asyncio.run(main_async(args.loop))
+
+    try:
+        asyncio.run(main_async(args.loop))
+    except DatabaseCredentialsRejected as e:
+        # ★ traceback を出さない。読む人に必要なのは「どこを直すか」だけ
+        logger.error("起動できません（設定の誤り）", reason=str(e))
+        logger.error(
+            "確認する場所",
+            hint="このサービスの DATABASE_URL と、DB のロードのパスワード。"
+            "片方だけ変えるとこの状態になります",
+        )
+        time.sleep(CONFIG_ERROR_COOLDOWN_SECONDS)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

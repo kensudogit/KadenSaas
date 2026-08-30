@@ -14,14 +14,8 @@ import os
 
 import pytest
 
-# 設定モジュールは import 時に検証して落ちるので、先に環境を整える
-os.environ.setdefault("DATABASE_URL", "postgresql://kaden_app:x@localhost:5433/kaden")
-os.environ.setdefault("JWT_SECRET", "0123456789abcdef0123456789abcdef")
-os.environ.setdefault("PUBLIC_BASE_URL", "https://calls.example.com")
-os.environ.setdefault("APP_ENV", "development")
-os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
-os.environ.setdefault("TWILIO_AUTH_TOKEN", "test_auth_token_0123456789abcdef")
-os.environ.setdefault("TWILIO_CALLER_ID", "+81312340000")
+# 設定モジュールは import 時に検証して落ちる。環境は conftest.py が用意する
+# （各ファイルで設定していると、書き忘れたファイルを足した瞬間に収集ごと失敗する）
 
 from twilio.request_validator import RequestValidator  # noqa: E402
 

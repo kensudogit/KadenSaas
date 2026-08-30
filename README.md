@@ -611,6 +611,50 @@ Flyway は BYPASSRLS を持つ `kaden_migrator` で流すのが正しいので�
 
 ---
 
+### password authentication failed for user "kaden_app" / "kaden_migrator"
+
+DB 側のロードのパスワードと、各サービスの `DATABASE_URL` が食い違っている。
+**資格情報は 2 か所（DB のロード と 各サービスの環境変数）にあり、
+片方だけ変えるとこうなる。** 実際にこれで全サービスが起動不能になった。
+
+紛らわしいのは、**すでに起動しているサービスはしばらく生き残る**こと。
+asyncpg / HikariCP はプールを保持しているので `/healthz` は 200 を返し続ける。
+壊れるのは「再起動したとき」と「プールを広げようとしたとき」なので、
+一部だけ落ちているように見える。実際には全部が壊れている。
+
+復旧は、DB と全サービスを**同時に**そろえる:
+
+```bash
+railway connect Postgres
+```
+```sql
+alter role kaden_app      password '...';
+alter role kaden_migrator password '...';
+```
+
+```bash
+# api は両方、voice の 3 つは DATABASE_URL だけ
+railway variables -s KadenSaas   --set "DATABASE_URL=postgresql://kaden_app:PW1@postgres.railway.internal:5432/railway"   --set "DATABASE_MIGRATOR_URL=postgresql://kaden_migrator:PW2@postgres.railway.internal:5432/railway"
+```
+
+> **パスワードは 16 進など URL に安全な文字にする**（`openssl rand -hex 24`）。
+> `@` `/` `#` `?` が入ると DSN の区切りとして解釈され、
+> 「パスワードが違う」ではなく「ホストが見つからない」など別の症状で出る。
+
+再発を防ぐには、`DATABASE_URL` を 1 か所に集約して参照させる:
+
+```bash
+railway variables -s voice-jobs --set 'DATABASE_URL=${{KadenSaas.DATABASE_URL}}'
+```
+
+> **参照へ切り替えるのは、パスワードを直した後にすること。**
+> 変数を変えると再デプロイが走る。壊れた値のまま切り替えると、
+> 古いプールで生き残っていたサービスまで落ちる。
+
+なお `DATABASE_MIGRATOR_URL` は api しか使わない。voice の 3 サービスにも
+設定されているが不要で、しかも `kaden_migrator` は BYPASSRLS を持つ。
+使わないサービスに RLS を素通りできる資格情報を置かない。
+
 ## 症状から引く
 
 | 症状 | 見るところ |
