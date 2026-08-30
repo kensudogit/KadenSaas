@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import GuideMount from "@/components/GuideMount";
+import AppNav from "@/components/AppNav";
 
 export const metadata: Metadata = {
   title: "架電SaaS",
@@ -13,6 +14,7 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body>
+        <AppNav />
         {children}
         <GuideMount />
       </body>

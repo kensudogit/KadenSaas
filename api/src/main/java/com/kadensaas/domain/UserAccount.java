@@ -37,6 +37,10 @@ public class UserAccount {
     private String role;
     private String status;
 
+    // ★ 管理者が発行した初期パスワードのままか。本人が変更すると false になる
+    @Column(name = "password_change_required")
+    private boolean passwordChangeRequired;
+
     @Column(name = "last_seen_at")
     private OffsetDateTime lastSeenAt;
 

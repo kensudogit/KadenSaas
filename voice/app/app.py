@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import logger
-from .api import internal
+from .api import internal, recordings
 from .config import CORS_ORIGIN, TELEPHONY_ENABLED
 from .db.engine import close_pool, init_pool, pool
 from .telephony import routes as telephony_routes
@@ -84,6 +84,9 @@ def create_app() -> FastAPI:
     app.include_router(telephony_routes.router)
     # api（Spring Boot）からの内部呼び出し（JWT 検証あり）
     app.include_router(internal.router)
+    # 録音の再生（JWT 検証あり）。S3 の資格情報を持つのは voice だけなので、
+    # 署名付き URL の発行はここにしか置けない
+    app.include_router(recordings.router)
 
     @app.exception_handler(Exception)
     async def unhandled(request: Request, exc: Exception):

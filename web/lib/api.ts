@@ -170,7 +170,13 @@ export const queue = {
 export interface DialResult {
   accepted: boolean;
   callSessionId?: string;
-  reason?: string;
+  /**
+   * ★ サーバーの項目名は blockedReason。以前ここが reason になっており、
+   *   型としては通るが実行時は常に undefined だった。
+   *   参照している画面が無かったため誰も気付いていなかっただけで、
+   *   使い始めた瞬間に「止められた理由が出ない」形で表面化する。
+   */
+  blockedReason?: string;
   message?: string;
 }
 
@@ -231,16 +237,32 @@ export const kpi = {
 
 // ---------------------------------------------------------------- 顧客
 
+/**
+ * 顧客。
+ *
+ * ★ 一覧は主電話番号と担当者を含む。行ごとに追加の問い合わせをしないため、
+ *   というより「架電」ボタンを出すのに番号が要るため。
+ *   番号の無い顧客にボタンを出しても、押した先で失敗するだけ。
+ */
+export interface CustomerRow {
+  id: string;
+  company_name: string | null;
+  contact_name: string | null;
+  status: string;
+  created_at: string;
+  owner_id: string | null;
+  owner_name: string | null;
+  phone_id: string | null;
+  phone_e164: string | null;
+  phone_raw: string | null;
+  do_not_call: boolean;
+}
+
 export const customers = {
   list: (q?: string) =>
-    api<
-      Array<{
-        id: string;
-        companyName: string | null;
-        contactName: string | null;
-        status: string;
-      }>
-    >(`/api/v1/customers${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    api<CustomerRow[]>(
+      `/api/v1/customers${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    ),
 };
 
 /**
@@ -322,4 +344,216 @@ export const dnc = {
     api<{ e164: string; blocked: boolean }>(
       `/api/v1/dnc/check?phone=${encodeURIComponent(phone)}`,
     ),
+};
+
+
+// ---------------------------------------------------------------- 分析
+
+function range(from?: string, to?: string): string {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const q = params.toString();
+  return q ? `?${q}` : "";
+}
+
+export interface HourlyRow {
+  local_hour: number;
+  denominator: number;
+  connected: number;
+  successes: number;
+}
+
+export interface WeekdayRow {
+  local_weekday: number;
+  denominator: number;
+  connected: number;
+  successes: number;
+}
+
+export interface OperatorRow {
+  operator_id: string | null;
+  operator_name: string;
+  operator_status: string | null;
+  denominator: number;
+  connected: number;
+  conversations: number;
+  successes: number;
+  blocked: number;
+  avg_talk_seconds: number;
+}
+
+export interface BlockedRow {
+  blocked_reason: string;
+  count: number;
+}
+
+/**
+ * ★ manager 以上でないと 403 になる。担当者別の成績は評価に直結するので、
+ *   オペレーター同士では見えないようサーバー側で止めている。
+ */
+export const analytics = {
+  hourly: (from?: string, to?: string) =>
+    api<HourlyRow[]>(`/api/v1/analytics/hourly${range(from, to)}`),
+  weekday: (from?: string, to?: string) =>
+    api<WeekdayRow[]>(`/api/v1/analytics/weekday${range(from, to)}`),
+  operator: (from?: string, to?: string) =>
+    api<OperatorRow[]>(`/api/v1/analytics/operator${range(from, to)}`),
+  blocked: (from?: string, to?: string) =>
+    api<BlockedRow[]>(`/api/v1/analytics/blocked${range(from, to)}`),
+};
+
+// ---------------------------------------------------------------- 架電履歴
+
+export interface HistoryRow {
+  id: string;
+  started_at: string;
+  answered_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  dial_state: string;
+  blocked_reason: string | null;
+  to_e164: string;
+  disposition_code: string | null;
+  disposition_label: string | null;
+  disposition_is_success: boolean | null;
+  customer_id: string;
+  company_name: string | null;
+  operator_id: string | null;
+  operator_name: string | null;
+  recording_id: string | null;
+}
+
+export interface HistoryPage {
+  rows: HistoryRow[];
+  total: number;
+  offset: number;
+  limit: number;
+  /** ★ オペレーターは自分の通話だけ。黙って絞ると件数の問い合わせになる */
+  scopedToSelf: boolean;
+}
+
+export const history = {
+  list: (params: {
+    from?: string;
+    to?: string;
+    kind?: string;
+    q?: string;
+    operatorId?: string;
+    offset?: number;
+    limit?: number;
+  }) => {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") search.set(k, String(v));
+    });
+    const q = search.toString();
+    return api<HistoryPage>(`/api/v1/call-history${q ? `?${q}` : ""}`);
+  },
+
+  detail: (id: string) =>
+    api<{
+      call: Record<string, unknown>;
+      dispositions: Array<Record<string, unknown>>;
+      events: Array<Record<string, unknown>>;
+    }>(`/api/v1/call-history/${id}`),
+};
+
+// ---------------------------------------------------------------- 録音
+
+/**
+ * 録音の再生 URL。
+ *
+ * ★ voice 側にしかない。S3 の資格情報を持つのが voice だけだから。
+ *   api は録音の「有無」だけを返す。
+ *
+ * ★ URL は 5 分で切れる。取得のたびに recording_access_logs に
+ *   記録が残るので、押した回数だけ記録される（これは意図した動作）。
+ */
+export const recordings = {
+  playbackUrl: (recordingId: string) =>
+    voice<{
+      url: string;
+      expiresInSeconds: number;
+      contentType: string;
+      durationSeconds: number | null;
+    }>(`/recordings/${recordingId}/url`),
+};
+
+// ---------------------------------------------------------------- 利用者
+
+export interface UserRow {
+  id: string;
+  email: string;
+  display_name: string;
+  role: Role;
+  status: "active" | "disabled";
+  last_seen_at: string | null;
+  created_at: string;
+  password_change_required: boolean;
+  call_count: number;
+}
+
+export const users = {
+  list: () => api<UserRow[]>("/api/v1/admin/users"),
+
+  /** ★ initialPassword はこの応答にしか現れない。保存も再表示もできない */
+  create: (email: string, displayName: string, role: Role) =>
+    api<{
+      id: string;
+      email: string;
+      role: Role;
+      initialPassword: string;
+      message: string;
+    }>("/api/v1/admin/users", {
+      method: "POST",
+      body: JSON.stringify({ email, displayName, role }),
+    }),
+
+  changeRole: (id: string, role: Role) =>
+    api<{ ok: boolean; message: string }>(`/api/v1/admin/users/${id}/role`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+
+  setStatus: (id: string, active: boolean) =>
+    api<{ ok: boolean; message: string }>(
+      `/api/v1/admin/users/${id}/status?active=${active}`,
+      { method: "PATCH" },
+    ),
+
+  resetPassword: (id: string) =>
+    api<{ initialPassword: string; message: string }>(
+      `/api/v1/admin/users/${id}/password-reset`,
+      { method: "POST" },
+    ),
+
+  changeOwnPassword: (currentPassword: string, newPassword: string) =>
+    api<{ ok: boolean; message: string }>("/api/v1/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+};
+
+// ---------------------------------------------------------------- 権限
+
+export interface CapabilityRow {
+  key: string;
+  label: string;
+  detail: string;
+  operator: boolean;
+  manager: boolean;
+  admin: boolean;
+  allowedForMe: boolean;
+}
+
+/**
+ * ★ この表はサーバーの PermissionCatalog を映しているだけで、
+ *   実際に権限を決めているのは SecurityConfig と @PreAuthorize。
+ *   両者がずれていないことは PermissionMatrixTest が実際に叩いて
+ *   確かめている（ずれるとテストが落ちる）。
+ */
+export const permissions = {
+  get: () =>
+    api<{ myRole: Role; capabilities: CapabilityRow[] }>("/api/v1/permissions"),
 };

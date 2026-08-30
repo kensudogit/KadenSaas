@@ -111,8 +111,8 @@ export default function DashboardPage() {
   const maxHourly = Math.max(1, ...hourly.map((h) => h.denominator));
 
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: 20 }}>
-      <h1 style={{ fontSize: 20 }}>架電 KPI</h1>
+    <main style={{ maxWidth: 1100, margin: "0 auto", padding: "0 20px 40px" }}>
+      <h1 style={{ fontSize: 20 }}>ダッシュボード</h1>
 
       {error && (
         <div role="alert" style={{ color: "var(--danger)" }}>
@@ -123,12 +123,6 @@ export default function DashboardPage() {
       {notice && (
         <div style={{ color: "var(--ok)", fontSize: 14 }}>{notice}</div>
       )}
-
-      <nav style={{ display: "flex", gap: 14, fontSize: 14, marginBottom: 8 }}>
-        <a href="/customers" style={{ color: "var(--accent)" }}>顧客</a>
-        <a href="/operator" style={{ color: "var(--accent)" }}>架電</a>
-        <a href="/settings/telephony" style={{ color: "var(--accent)" }}>電話設定</a>
-      </nav>
 
       {/* ★ データが 1 件も無いときだけ投入を促す。数字が全部 0 の画面は
           「壊れている」のか「まだ何もしていない」のか区別が付かない */}

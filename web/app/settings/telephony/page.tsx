@@ -106,15 +106,8 @@ export default function TelephonySettingsPage() {
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
-      <header style={{ display: "flex", alignItems: "baseline", marginBottom: 16 }}>
-        <h1 style={{ fontSize: 20, margin: 0 }}>電話設定</h1>
-        <nav style={{ marginLeft: "auto", display: "flex", gap: 14, fontSize: 14 }}>
-          <a href="/dashboard" style={{ color: "var(--accent)" }}>KPI</a>
-          <a href="/customers" style={{ color: "var(--accent)" }}>顧客</a>
-          <a href="/operator" style={{ color: "var(--accent)" }}>架電</a>
-        </nav>
-      </header>
+    <main style={{ maxWidth: 720, margin: "0 auto", padding: "0 20px 40px" }}>
+      <h1 style={{ fontSize: 20, margin: "0 0 16px" }}>電話設定</h1>
 
       {error && (
         <div

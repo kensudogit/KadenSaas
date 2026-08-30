@@ -87,7 +87,11 @@ public class AuthController {
                 "user", Map.of(
                     "id", user.getId(),
                     "displayName", user.getDisplayName(),
-                    "role", user.getRole()),
+                    "role", user.getRole(),
+                    // ★ 管理者が発行した初期パスワードのままなら画面が変更を促す。
+                    //   ここは通知であって強制ではない。強制するなら
+                    //   認証フィルタ側で他の API を止める必要がある
+                    "passwordChangeRequired", user.isPasswordChangeRequired()),
                 "tenant", Map.of(
                     "id", tenant.getId(),
                     "name", tenant.getName(),

@@ -11,7 +11,7 @@ import com.kadensaas.repository.CustomerRepository;
 import com.kadensaas.service.AuditService;
 import com.kadensaas.service.PhoneNumbers;
 import jakarta.validation.constraints.NotBlank;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,23 +29,70 @@ public class CustomerController {
     private final CustomerRepository customers;
     private final CustomerPhoneRepository phones;
     private final AuditService audit;
+    private final JdbcTemplate jdbc;
 
     public CustomerController(CustomerRepository customers, CustomerPhoneRepository phones,
-                              AuditService audit) {
+                              AuditService audit, JdbcTemplate jdbc) {
         this.customers = customers;
         this.phones = phones;
         this.audit = audit;
+        this.jdbc = jdbc;
     }
 
+    /**
+     * 顧客リスト。
+     *
+     * <p>★ 主電話番号と担当者を一緒に返す。画面が行ごとに追加問い合わせを
+     * するのを避けるためだが、それ以上に「架電」ボタンを出すのに番号が要る。
+     * 番号の無い顧客にボタンを出しても、押した先で失敗するだけ。
+     *
+     * <p>★ 再勧誘拒否かどうかも返す。DNC の相手に架電ボタンを出しても
+     * 関門が止めるので実害は無いが、押してから止められるより、
+     * 最初から押せないほうが分かりやすい。
+     *
+     * <p>★ 番号は主番号（is_primary）を 1 件だけ。複数ある顧客もいるが、
+     * 一覧で全部出すと行の高さが揃わず読みにくい。詳細で見せる。
+     */
     @GetMapping
-    public List<Customer> list(@RequestParam(required = false) String q,
-                               @RequestParam(defaultValue = "0") int page,
-                               @RequestParam(defaultValue = "50") int size) {
-        var pageable = PageRequest.of(page, Math.min(size, 200));
-        if (q != null && !q.isBlank()) {
-            return customers.search(q, pageable);
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> list(@RequestParam(required = false) String q,
+                                          @RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "50") int size) {
+        int limit = Math.min(size, 200);
+        int offset = Math.max(0, page) * limit;
+
+        String filter = q != null && !q.isBlank()
+            ? " and (c.company_name ilike ? or c.contact_name ilike ? or p.e164 ilike ?) "
+            : "";
+
+        String sql = """
+            select c.id, c.company_name, c.contact_name, c.status, c.created_at,
+                   c.owner_id, u.display_name as owner_name,
+                   p.id   as phone_id,
+                   p.e164 as phone_e164,
+                   p.raw_number as phone_raw,
+                   exists (select 1 from do_not_call_entries d where d.e164 = p.e164)
+                     as do_not_call
+              from customers c
+              left join users u on u.id = c.owner_id
+              left join lateral (
+                select ph.id, ph.e164, ph.raw_number
+                  from customer_phones ph
+                 where ph.customer_id = c.id
+                 order by ph.is_primary desc, ph.created_at
+                 limit 1
+              ) p on true
+             where true
+            """ + filter + " order by c.created_at desc limit ? offset ?";
+
+        Object[] args;
+        if (filter.isEmpty()) {
+            args = new Object[] {limit, offset};
+        } else {
+            String like = "%" + q.trim() + "%";
+            args = new Object[] {like, like, like, limit, offset};
         }
-        return customers.findAllByOrderByCreatedAtDesc(pageable).getContent();
+        return jdbc.queryForList(sql, args);
     }
 
     @GetMapping("/{id}")
