@@ -39,6 +39,10 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health/**").permitAll()
+                // ★ ここが API であることだけを返す。ブラウザで開いたときに
+                //   素の 403 画面になると「壊れているのか、URL が違うのか」が
+                //   分からない（実際に問い合わせになった）
+                .requestMatchers(HttpMethod.GET, "/").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                 // ★ テナント登録は認証前に呼ばれる。この系で唯一の
                 //   「認証なしで書き込める口」なので、SignupController 側で
@@ -54,8 +58,39 @@ public class SecurityConfig {
                     .hasAnyRole("MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
+            // ★ 認証されていないときは 401、権限が足りないときは 403 を返す。
+            //
+            //   既定では両方 403 になる。すると画面側は「トークンが切れた」のか
+            //   「権限が無い」のかを区別できない。web/lib/api.ts は 401 のときだけ
+            //   トークンを捨ててログイン画面へ戻すので、期限切れが 403 で返ると
+            //   利用者は「エラー (403)」の画面から抜け出せなくなる。
+            //   ログアウトを押すか localStorage を消すまで詰む。
+            //
+            //   401 は「ログインし直せば解決する」、403 は「別の人に頼め」。
+            //   利用者が取るべき行動が違うので、必ず分ける。
+            .exceptionHandling(e -> e
+                .authenticationEntryPoint((req, res, ex) ->
+                    writeJson(res, 401, "unauthenticated", "ログインし直してください"))
+                .accessDeniedHandler((req, res, ex) ->
+                    writeJson(res, 403, "forbidden", "この操作を行う権限がありません")))
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * 例外時の応答。
+     *
+     * <p>★ 本文の形を {@code ApiExceptionHandler} とそろえる。ここは
+     * フィルタ内なので @ControllerAdvice を通らず、別々に書く必要がある。
+     * 形が違うと、画面側が「エラーの読み方」を 2 通り持つことになる。
+     */
+    private static void writeJson(jakarta.servlet.http.HttpServletResponse response,
+                                  int status, String error, String message)
+            throws java.io.IOException {
+        response.setStatus(status);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write(
+            "{\"error\":\"" + error + "\",\"message\":\"" + message + "\"}");
     }
 
     private CorsConfigurationSource corsSource() {
