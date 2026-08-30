@@ -320,8 +320,9 @@ Railway が待つポートと合わずヘルスチェックが通らない。
 api 側で `jdbc:postgresql://...` + ユーザー / パスワードに分解する。
 `SPRING_DATASOURCE_*` を手で 3 つに分けて設定する必要はない。
 
-`DATABASE_MIGRATOR_URL` も同じ形で渡す。未設定だと Flyway が `kaden_app` で
-マイグレーションを流すことになり、RLS が効いた状態で DDL を打って失敗する。
+`DATABASE_MIGRATOR_URL` も同じ形で渡す。未設定なら Flyway は
+`spring.datasource` の資格情報をそのまま使う（別のロールに勝手に
+フォールバックしない）。本番では BYPASSRLS を持つロールを渡して分離すること。
 
 > **★ 変数名を打ち間違えても何も言われない。**
 > `DATABSE_URL` のような綴り間違いがあると、アプリは
@@ -345,8 +346,21 @@ Railway の Postgres が配る `DATABASE_URL` は superuser なので、
 そのまま `DATABASE_URL` に使うと、`force row level security` は superuser に効かないため、
 **RLS が「書かれているのに 1 行も効かない」状態**になる。アプリは正常に動くので気付けない。
 
-起動時に接続ロールを検査して止める（`assert_rls_enforced`）。api と voice の両方で検査する。
-片方だけ守っても、もう片方から漏れる。
+起動時に接続ロールを検査して止める。api は
+[`RlsEnforcementCheck`](api/src/main/java/com/kadensaas/config/RlsEnforcementCheck.java)、
+voice は [`assert_rls_enforced`](voice/app/db/engine.py)。
+**両方に置くこと。片方だけ守っても、もう片方から漏れる。**
+
+`APP_ENV=production` のときだけ起動を止める（開発中は警告のみ）。
+Flyway は BYPASSRLS を持つ `kaden_migrator` で流すのが正しいので、検査の対象外。
+見るのはアプリが実際に使う接続。
+
+```
+アプリの接続ロール postgres が superuser のため、RLS が適用されません。
+テナント分離が無効の状態です
+```
+
+これが出たら **意図した停止**。動かないほうが、静かに漏れているよりよい。
 
 また PostgreSQL 15 以降、`public` スキーマの CREATE 権限が PUBLIC から外れた。
 データベース単位の grant だけでは Flyway が最初のテーブルすら作れない。

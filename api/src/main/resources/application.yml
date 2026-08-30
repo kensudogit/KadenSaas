@@ -31,8 +31,18 @@ spring:
 
   flyway:
     enabled: true
-    user: ${SPRING_FLYWAY_USER:kaden_migrator}
-    password: ${SPRING_FLYWAY_PASSWORD:kaden_migrator_dev}
+    # ★ user / password に既定値を置かない。
+    #
+    #   置くと、本番で SPRING_FLYWAY_* も DATABASE_MIGRATOR_URL も未設定のとき、
+    #   開発用のロール名とパスワードに静かにフォールバックする。
+    #   そして落ちるときのメッセージは
+    #     FATAL: password authentication failed for user "kaden_migrator"
+    #   になり、「そんなロールは作っていない」ことに気付くまで時間を溶かす。
+    #   実際に Railway のデプロイでこれを踏んだ。
+    #
+    #   未設定なら Flyway は spring.datasource の資格情報をそのまま使う。
+    #   本番では DATABASE_MIGRATOR_URL（BYPASSRLS を持つロール）を渡して
+    #   分離すること。分離しないと、アプリと同じロールで DDL を打つことになる。
     locations: classpath:db/migration
     baseline-on-migrate: true
 
