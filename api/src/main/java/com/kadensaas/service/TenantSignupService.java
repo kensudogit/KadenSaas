@@ -211,8 +211,8 @@ public class TenantSignupService {
             //   報告していたため、原因の見当がつかなかった。
             t.setTimezone("Asia/Tokyo");
             t.setStatus("active");
-            t.setCallingHoursStart(java.time.LocalTime.of(9, 0));
-            t.setCallingHoursEnd(java.time.LocalTime.of(20, 0));
+            // 架電可能時間は写像していないので DB の default（09:00-20:00）が入る。
+            // 理由は Tenant の当該箇所を参照
             // 月〜金（ISO で 1=月曜）
             t.setCallingWeekdays(new int[] {1, 2, 3, 4, 5});
             t.setExcludeHolidays(true);

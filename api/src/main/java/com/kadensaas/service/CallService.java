@@ -134,10 +134,18 @@ public class CallService {
         return row;
     }
 
+    /**
+     * 発信者番号。設定が無ければ null を返す。
+     *
+     * <p>★ 行が無いときに例外を投げてはいけない。関門が
+     * {@code telephony_not_configured} で止めた場合も、止めた記録を残すために
+     * ここを通る。例外にすると「設定が無いテナントでは、止めたことすら
+     * 記録できず 500 になる」ことになり、いちばん記録が要る場面で落ちる。
+     */
     private String callerIdFor(Tenant tenant) {
-        return jdbc.queryForObject(
+        return jdbc.query(
             "select caller_id from tenant_telephony where tenant_id = ?",
-            String.class, tenant.getId());
+            rs -> rs.next() ? rs.getString(1) : null, tenant.getId());
     }
 
     /**

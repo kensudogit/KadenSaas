@@ -67,16 +67,30 @@ fi
 # --------------------------------------------------------------- 3
 # 関門を呼ぶのは CallService だけ。
 # ここが増えるほど「関門を通らない発信」が生まれやすくなる。
+#
+# ★ コメントを落としてから探す。以前はファイル内に DialingGate の文字が
+#   あるだけで違反としていたため、設計を説明したコメントだけで赤くなった。
+#   そうなると「検査を通すために説明を消す」ことになり、本末転倒になる。
+#   見たいのは実際の参照（注入・呼び出し）であって、言及ではない。
 # shellcheck disable=SC2086
-hits=$(grep -rln $SRC_EXCLUDES "DialingGate" api/src/main/java 2>/dev/null \
-        | grep -v "service/CallService.java" \
-        | grep -v "service/DialingGate.java" || true)
+hits=""
+for f in $(grep -rl $SRC_EXCLUDES "DialingGate" api/src/main/java 2>/dev/null || true); do
+  case "$f" in
+    */service/CallService.java|*/service/DialingGate.java) continue ;;
+  esac
+  # 行コメント（//）と Javadoc・ブロックコメントの行（* や / で始まる）を落とす
+  if sed 's|//.*||' "$f" | grep -v '^[[:space:]]*[*/]' | grep -q "DialingGate"; then
+    hits="$hits$f
+"
+  fi
+done
 if [ -n "$hits" ]; then
   report "関門を呼ぶのは CallService だけ" 1
-  echo "$hits" | sed 's/^/       → /'
+  printf '%s' "$hits" | sed 's/^/       → /'
 else
   report "関門を呼ぶのは CallService だけ" 0
 fi
+
 
 # --------------------------------------------------------------- 4
 # スキーマの所有者は api（Flyway）に一本化する。

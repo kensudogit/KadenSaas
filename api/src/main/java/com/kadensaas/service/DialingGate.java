@@ -1,11 +1,5 @@
 package com.kadensaas.service;
 
-import java.time.DayOfWeek;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.util.Arrays;
 import java.util.UUID;
 
 import com.kadensaas.domain.Tenant;
@@ -136,33 +130,52 @@ public class DialingGate {
     /**
      * 架電可能な時間帯か。
      *
-     * <p>★ サーバーのタイムゾーンではなくテナントのタイムゾーンで判定する。
-     * UTC で動くコンテナに載せた瞬間に 9 時間ずれ、早朝に架電することになる。
+     * <p>★ 判定はすべて DB 側で、テナントのタイムゾーンで行う。
+     * JVM のタイムゾーンを一切経由させないためである。
+     *
+     * <p>以前は Java 側で {@code ZonedDateTime.now(zone)} と
+     * エンティティの {@code LocalTime} を比べていた。ところが
+     * {@code hibernate.jdbc.time_zone: UTC} は {@code time} 型の列にも効くので、
+     * 読み書きのたびに値が JVM のタイムゾーン分ずれる。往復では辻褄が合うため
+     * 気付きにくいが、DB の中身は間違っており、SQL で直接読む診断画面とは
+     * 9 時間ずれた時間帯が表示される。さらに、同じ判断を Java と SQL の
+     * 2 箇所で書いていたため、両者が食い違う余地があった。
+     * 判断は 1 つの式にまとめ、診断画面と同じものを使う。
+     *
+     * <p>★ 祝日の判定も同じ式の中でテナントの日付を使う。サーバーの日付で
+     * 数えると、深夜帯に前日／翌日の祝日判定になる。
      */
     private Decision checkCallingWindow(Tenant tenant) {
-        ZoneId zone = ZoneId.of(tenant.getTimezone());
-        ZonedDateTime now = ZonedDateTime.now(zone);
+        var w = jdbc.queryForMap("""
+            select extract(isodow from now() at time zone timezone)::int
+                     = any(calling_weekdays)                              as in_weekday,
+                   (now() at time zone timezone)::time
+                     >= calling_hours_start
+                   and (now() at time zone timezone)::time
+                     < calling_hours_end                                  as in_hours,
+                   exclude_holidays
+                   and exists (select 1 from public_holidays
+                                where holiday_date
+                                        = (now() at time zone timezone)::date) as on_holiday,
+                   to_char(calling_hours_start, 'HH24:MI')                as starts,
+                   to_char(calling_hours_end,   'HH24:MI')                as ends,
+                   to_char(now() at time zone timezone, 'Dy')             as today
+              from tenants where id = ?
+            """, tenant.getId());
 
-        int[] weekdays = tenant.getCallingWeekdays();
-        DayOfWeek today = now.getDayOfWeek();
-        // DB には ISO の 1=月曜 で入れてある
-        boolean weekdayAllowed = weekdays != null
-            && Arrays.stream(weekdays).anyMatch(d -> d == today.getValue());
-        if (!weekdayAllowed) {
+        if (!Boolean.TRUE.equals(w.get("in_weekday"))) {
             return new Decision.Blocked("outside_weekday",
-                "このテナントの架電曜日ではありません（" + today + "）");
+                "このテナントの架電曜日ではありません（" + w.get("today") + "）");
         }
 
-        if (tenant.isExcludeHolidays() && isJapaneseHoliday(now.toLocalDate())) {
+        if (Boolean.TRUE.equals(w.get("on_holiday"))) {
             return new Decision.Blocked("holiday", "祝日のため架電しません");
         }
 
-        LocalTime t = now.toLocalTime();
-        LocalTime start = tenant.getCallingHoursStart();
-        LocalTime end = tenant.getCallingHoursEnd();
-        if (t.isBefore(start) || !t.isBefore(end)) {
+        if (!Boolean.TRUE.equals(w.get("in_hours"))) {
             return new Decision.Blocked("outside_hours",
-                "架電可能時間外です（" + start + "-" + end + " " + tenant.getTimezone() + "）");
+                "架電可能時間外です（" + w.get("starts") + "-" + w.get("ends")
+                    + " " + tenant.getTimezone() + "）");
         }
 
         return null;
@@ -204,16 +217,4 @@ public class DialingGate {
         return null;
     }
 
-    /**
-     * 日本の祝日か。
-     *
-     * <p>★ 祝日表はライブラリに任せず DB に持つ。ライブラリだと
-     * 法改正（五輪のときの移動など）に追随するためにデプロイが必要になる。
-     * 運用で足せる形にしておく。表が空なら祝日なしとして扱う。
-     */
-    private boolean isJapaneseHoliday(LocalDate date) {
-        Integer count = jdbc.queryForObject(
-            "select count(*) from public_holidays where holiday_date = ?", Integer.class, date);
-        return count != null && count > 0;
-    }
 }
