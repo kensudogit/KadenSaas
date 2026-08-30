@@ -3,6 +3,7 @@ package com.kadensaas.web;
 import java.util.Map;
 
 import com.kadensaas.service.SampleDataService;
+import com.kadensaas.service.TelephonySettingsService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -19,10 +20,71 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/admin")
 public class AdminController {
 
-    private final SampleDataService sampleData;
+    public record TelephonyRequest(String callerId, String machineDetection,
+                                   Boolean recordingEnabled, Boolean dialingEnabled) {
+    }
 
-    public AdminController(SampleDataService sampleData) {
+    private final SampleDataService sampleData;
+    private final TelephonySettingsService telephony;
+
+    public AdminController(SampleDataService sampleData,
+                           TelephonySettingsService telephony) {
         this.sampleData = sampleData;
+        this.telephony = telephony;
+    }
+
+    // ------------------------------------------------------------ 電話設定
+
+    @GetMapping("/telephony")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Object telephony() {
+        return telephony.get(CurrentUser.require());
+    }
+
+    @PutMapping("/telephony")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> saveTelephony(@RequestBody TelephonyRequest req) {
+        try {
+            telephony.save(CurrentUser.require(), req.callerId(),
+                req.machineDetection(), req.recordingEnabled(), req.dialingEnabled());
+            return ResponseEntity.ok(Map.of("ok", true, "message", "保存しました"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "invalid_settings", "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * 発信の停止／再開。
+     *
+     * <p>★ 設定全体の保存と分けてある。事故のときに押すスイッチなので、
+     * 他の項目を巻き込まず 1 操作で確実に止まることを優先する。
+     */
+    @PostMapping("/telephony/dialing")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> setDialing(@RequestParam boolean enabled) {
+        try {
+            telephony.setDialingEnabled(CurrentUser.require(), enabled);
+            return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "message", enabled ? "発信を再開しました" : "発信を停止しました"));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "not_configured", "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * 発信できるかの診断。
+     *
+     * <p>★ manager でも見られるようにする。止まっている理由を知りたいのは
+     * 設定を変える人だけではない。変更は admin 限定のまま。
+     */
+    @GetMapping("/telephony/diagnose")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public Object diagnose() {
+        var d = telephony.diagnose(CurrentUser.require());
+        return Map.of("canDial", d.canDial(), "checks", d.checks());
     }
 
     /**

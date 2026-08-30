@@ -104,6 +104,32 @@ else
 fi
 
 echo ""
+echo "電話設定と診断"
+echo "----------------------------------------------------------------------"
+# ★ 診断は manager でも見られる。止まっている理由を知りたいのは設定者だけではない
+body=$(curl -s --max-time 10 "$API/api/v1/admin/telephony/diagnose" -H "$AUTH")
+case "$body" in
+  *canDial*) ng "operator が診断を見られてしまう" ;;
+  *)         pass "operator は診断を見られない" ;;
+esac
+
+MGR=$(curl -s --max-time 10 -X POST "$API/api/v1/auth/login" -H "Content-Type: application/json" -d '{"tenantSlug":"demo","email":"manager@demo.example","password":"password"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+
+body=$(curl -s --max-time 10 "$API/api/v1/admin/telephony/diagnose"   -H "Authorization: Bearer $MGR")
+case "$body" in
+  *checks*) pass "manager は診断を見られる" ;;
+  *)        ng "manager が診断を見られない" ;;
+esac
+
+# ★ 設定の変更は admin 限定のまま
+code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X PUT   "$API/api/v1/admin/telephony" -H "Authorization: Bearer $MGR"   -H "Content-Type: application/json" -d '{"callerId":"+81300000001"}')
+if [ "$code" = "403" ]; then
+  pass "manager は電話設定を変更できない ($code)"
+else
+  ng "★ manager が電話設定を変更できる ($code)"
+fi
+
+echo ""
 echo "テナント登録"
 echo "----------------------------------------------------------------------"
 # ★ トークンが未設定なら 404（口ごと無効）、設定済みならトークン無しで 401。

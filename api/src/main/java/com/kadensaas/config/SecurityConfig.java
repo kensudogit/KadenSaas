@@ -47,6 +47,11 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/signup/available").permitAll()
                 // ★ Stripe の webhook は署名で検証する。JWT は付かない
                 .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/billing").permitAll()
+                // ★ 診断だけは manager にも開ける。発信が止まっている理由を
+                //   知りたいのは、設定を変える人だけではない。
+                //   この行は /api/v1/admin/** より前に置く（先勝ち）
+                .requestMatchers(HttpMethod.GET, "/api/v1/admin/telephony/diagnose")
+                    .hasAnyRole("MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);

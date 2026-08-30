@@ -77,12 +77,33 @@ public class DialingGate {
     @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
     public Decision evaluate(Tenant tenant, String e164, UUID customerId) {
 
-        // ★ 障害時に発信だけを止められるようにしておく。アプリ全体を
-        //   巻き戻さずに「今日はかけない」ができないと、事故のときに
-        //   デプロイを待つことになる
+        // ★ 停止スイッチは 2 段。全体（環境変数）とテナント別（DB）。
+        //
+        //   全体だけだと「1 社から苦情が来たので、その会社への発信だけ止める」
+        //   ができず、全テナントを巻き添えにするか、何もしないかの二択になる。
+        //   テナント別だけだと、基盤側の事故で全部止めたいときに
+        //   テナントの数だけ操作することになる。両方要る。
+        //
+        //   テナント別は画面から即座に切り替えられる（デプロイを待たない）。
         if (!dialingEnabled) {
             return new Decision.Blocked("dialing_disabled",
-                "発信が管理者により停止されています");
+                "発信が停止されています（システム全体）");
+        }
+
+        Boolean tenantDialing = jdbc.query(
+            "select dialing_enabled from tenant_telephony where tenant_id = ?",
+            rs -> rs.next() ? rs.getBoolean(1) : null, tenant.getId());
+
+        // ★ 行が無い＝発信者番号が未設定。鳴らせないので止める。
+        //   ここを「設定が無いから素通り」にすると、from が null のまま
+        //   Twilio に渡って分かりにくいエラーになる
+        if (tenantDialing == null) {
+            return new Decision.Blocked("telephony_not_configured",
+                "発信者番号が設定されていません。管理画面で設定してください");
+        }
+        if (!tenantDialing) {
+            return new Decision.Blocked("dialing_disabled",
+                "このテナントの発信が停止されています");
         }
 
         // ★ 最初に DNC。ここを後ろに置くと、他の理由で弾かれたときに

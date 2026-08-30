@@ -127,6 +127,7 @@ export default function DashboardPage() {
       <nav style={{ display: "flex", gap: 14, fontSize: 14, marginBottom: 8 }}>
         <a href="/customers" style={{ color: "var(--accent)" }}>顧客</a>
         <a href="/operator" style={{ color: "var(--accent)" }}>架電</a>
+        <a href="/settings/telephony" style={{ color: "var(--accent)" }}>電話設定</a>
       </nav>
 
       {/* ★ データが 1 件も無いときだけ投入を促す。数字が全部 0 の画面は

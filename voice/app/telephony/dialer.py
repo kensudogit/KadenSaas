@@ -80,9 +80,19 @@ async def dial(tenant_id: UUID | str, call_session_id: UUID | str) -> str:
                 "（関門を通っていないか、すでに発信済みです）"
             )
 
-        recording_enabled = await conn.fetchval(
-            "select recording_enabled from tenant_telephony where tenant_id = $1",
+        # ★ テナント設定を読む。環境変数の既定値に落ちるのは
+        #   行が無いときだけ。留守番電話の検出方法は業種で変えたいことがあり、
+        #   全テナント共通にすると片方の要求で全部が動く
+        telephony = await conn.fetchrow(
+            """
+            select recording_enabled, machine_detection
+              from tenant_telephony where tenant_id = $1
+            """,
             tenant_id,
+        )
+        recording_enabled = telephony["recording_enabled"] if telephony else False
+        machine_detection = (
+            telephony["machine_detection"] if telephony else TWILIO_MACHINE_DETECTION
         )
 
     try:
@@ -100,7 +110,7 @@ async def dial(tenant_id: UUID | str, call_session_id: UUID | str) -> str:
             status_callback_event=["initiated", "ringing", "answered", "completed"],
             # ★ 留守番電話の検出。人が出たのか機械が出たのかで
             #   KPI の「接続」の意味が変わる
-            machine_detection=TWILIO_MACHINE_DETECTION,
+            machine_detection=machine_detection,
             record=bool(recording_enabled),
             recording_status_callback=public_url("/twilio/recording"),
             recording_status_callback_method="POST",

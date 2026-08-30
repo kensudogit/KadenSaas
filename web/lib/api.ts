@@ -268,6 +268,50 @@ export const admin = {
     ),
 };
 
+// ---------------------------------------------------------------- 電話設定
+
+export interface TelephonyCheck {
+  key: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export const telephony = {
+  get: () =>
+    api<{
+      configured: boolean;
+      callerId?: string;
+      machineDetection?: string;
+      recordingEnabled?: boolean;
+      dialingEnabled?: boolean;
+    }>("/api/v1/admin/telephony"),
+
+  save: (settings: {
+    callerId: string;
+    machineDetection: string;
+    recordingEnabled: boolean;
+    dialingEnabled: boolean;
+  }) =>
+    api<{ ok: boolean; message: string }>("/api/v1/admin/telephony", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
+
+  /** ★ 設定の保存と分けてある。事故のときに 1 操作で確実に止めるため。 */
+  setDialing: (enabled: boolean) =>
+    api<{ ok: boolean; message: string }>(
+      `/api/v1/admin/telephony/dialing?enabled=${enabled}`,
+      { method: "POST" },
+    ),
+
+  /** ★ manager でも見られる。止まっている理由を知りたいのは設定者だけではない。 */
+  diagnose: () =>
+    api<{ canDial: boolean; checks: TelephonyCheck[] }>(
+      "/api/v1/admin/telephony/diagnose",
+    ),
+};
+
 export const dnc = {
   register: (phone: string, reason: string) =>
     api<{ ok: boolean; e164: string }>("/api/v1/dnc", {
