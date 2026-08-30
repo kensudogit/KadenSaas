@@ -3,10 +3,14 @@
 /**
  * テナント登録。
  *
- * ★ この画面は登録用トークンを知っている人だけが使える。
- *   電話をかけられるシステムなので、誰でも組織を作れる状態にはしない。
- *   サーバー側でトークンが未設定なら API ごと無効（404）になっており、
- *   その場合はこの画面も「受け付けていません」と表示する。
+ * ★ 誰でも登録できる（公開サインアップ）。運用によっては合言葉を
+ *   要求する設定にもできるので、サーバーに問い合わせて出し分ける。
+ *   ここで判断せず、requiresToken に従う。
+ *
+ * ★ 登録しただけでは 1 本も発信できない。発信には発信者番号の設定が要り、
+ *   登録処理はそれを作らない。誰でも登録できる以上、この分離が
+ *   「誰でも迷惑電話をかけられる基盤」にしないための主軸になる。
+ *   利用者にも登録前に伝える（できると誤解させない）。
  *
  * ★ 識別子（slug）はログイン時に毎回入力するものなので、
  *   決める前に「あとで変えられない」ことを伝える。後から気付くと
@@ -22,6 +26,7 @@ const API_BASE =
 export default function SignupPage() {
   const router = useRouter();
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [requiresToken, setRequiresToken] = useState(false);
   const [token, setToken] = useState("");
   const [tenantName, setTenantName] = useState("");
   const [slug, setSlug] = useState("");
@@ -35,7 +40,10 @@ export default function SignupPage() {
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/signup/available`)
       .then((r) => r.json())
-      .then((d) => setEnabled(Boolean(d.enabled)))
+      .then((d) => {
+        setEnabled(Boolean(d.enabled));
+        setRequiresToken(Boolean(d.requiresToken));
+      })
       .catch(() => setEnabled(false));
   }, []);
 
@@ -48,7 +56,8 @@ export default function SignupPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Signup-Token": token,
+          // ★ 合言葉を要求しない設定のときは送らない
+          ...(requiresToken ? { "X-Signup-Token": token } : {}),
         },
         body: JSON.stringify({
           tenantName,
@@ -116,15 +125,35 @@ export default function SignupPage() {
         組織と、最初の管理者アカウントを作ります。
       </p>
 
+      {/* ★ 登録しただけでは発信できないことを、登録前に伝える。
+          あとで「かけられない」と問い合わせになるのを防ぐ。
+          そしてこれは制限ではなく、この製品の安全設計そのもの */}
+      <p
+        style={{
+          border: "1px solid var(--line)",
+          borderRadius: 8,
+          padding: "10px 12px",
+          fontSize: 13,
+          color: "var(--muted)",
+          marginTop: 14,
+          marginBottom: 0,
+        }}
+      >
+        登録後すぐに発信はできません。架電には、購入・検証済みの発信者番号を
+        管理画面で設定する必要があります。
+      </p>
+
       <form onSubmit={submit} style={{ display: "grid", gap: 14, marginTop: 22 }}>
-        <Field label="登録用トークン" hint="管理者から受け取った値">
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            required
-          />
-        </Field>
+        {requiresToken && (
+          <Field label="登録用トークン" hint="管理者から受け取った値">
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              required
+            />
+          </Field>
+        )}
 
         <Field label="組織名">
           <input
