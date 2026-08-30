@@ -1,0 +1,69 @@
+[project]
+name = "kaden-voice"
+version = "0.1.0"
+description = "架電SaaS の音声・AI サービス（Twilio / 文字起こし / 通話分析）"
+requires-python = ">=3.12"
+
+# ★ このサービスだけが Twilio に触れる。api（Spring Boot）側の依存に
+#   twilio が現れたら、発信の関門が 1 箇所という前提が壊れている。
+#   scripts/check-boundaries.sh が両方の依存を見て検証する。
+dependencies = [
+    "fastapi==0.138.1",
+    "uvicorn[standard]==0.52.1",
+    "asyncpg==0.31.0",
+    "twilio==9.11.0",
+    "pyjwt==2.13.0",
+    "python-dotenv==1.2.2",
+    "pydantic==2.13.4",
+    # Twilio のコールバックは application/x-www-form-urlencoded で来る
+    "python-multipart==0.0.32",
+    "redis==8.0.1",
+    # Deepgram などのストリーミング ASR 用
+    "websockets==16.0",
+    # ★ E.164 正規化。api 側の libphonenumber と同じ規則で揃える。
+    #   ずれると DNC の照合が静かに素通りする
+    "phonenumbers==9.0.38",
+    "httpx==0.28.1",
+    # ★ Windows と slim なコンテナには tz データベースが無く、
+    #   ZoneInfo("Asia/Tokyo") が ZoneInfoNotFoundError で落ちる。
+    #   架電可能時間の判定がタイムゾーンに依存するので、
+    #   OS 側の有無に頼らず同梱する
+    "tzdata==2025.2",
+]
+
+[project.optional-dependencies]
+storage = ["boto3==1.43.62"]
+llm = ["anthropic==0.105.2"]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.24.0",
+    "ruff==0.16.4",
+]
+
+# ★ パッケージを明示する。app / tests が並んでいるので、setuptools の
+#   自動検出は「どれが配布物か分からない」と言って失敗する。
+#   書かないと pip install . が通らず、Docker のビルドもできない。
+[tool.setuptools]
+packages = ["app"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
+ignore = [
+    "E501",  # 日本語コメントで桁数が伸びるため
+    # FastAPI の `user: AuthUser = Depends(...)` は定石。B008 が嫌う
+    # 「デフォルト値が呼び出しごとに評価される」には該当しない
+    "B008",
+]

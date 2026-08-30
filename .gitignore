@@ -1,0 +1,38 @@
+# 秘密情報。★ 絶対にコミットしない
+.env
+.env.local
+*.env
+!.env.example
+
+# 録音（個人情報）
+var/
+recordings/
+*.wav
+*.mp3
+
+# ビルド生成物
+build/
+.gradle/
+target/
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+__pycache__/
+*.pyc
+*.egg-info/
+.eggs/
+.venv/
+venv/
+node_modules/
+.next/
+out/
+
+# キャッシュ・レポート
+.pytest_cache/
+*.tsbuildinfo
+.ruff_cache/
+coverage/
+htmlcov/
+*.log
+
+# 評価用の作業ディレクトリ
+kaden-saas-workspace/

@@ -1,0 +1,143 @@
+# ============================================================================
+# ローカル開発環境。
+#
+# ★ 2 つのバックエンドが 1 つの DB を共有する構成。
+#     api   … Spring Boot。業務 API とスキーマの所有者（Flyway）
+#     voice … FastAPI。Twilio と AI。マイグレーションを持たない
+#   voice を api より先に上げても、スキーマが無いだけで壊れはしないが、
+#   depends_on で順番を固定しておく。
+#
+# ★ どちらのアプリも kaden_app で繋ぐ。postgres（superuser）では繋がない。
+#   superuser だと RLS が素通りし、テナント分離が「書いてあるのに効かない」
+#   状態になる。ローカルでこれを許すと、本番で初めて気付くことになる。
+# ============================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kaden
+    ports:
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # ★ 初回起動時にロールを作る。マネージド DB ではこれが使えないので
+      #   同じ内容を V6 のマイグレーションにも入れてある
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kaden"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ★ 録音の保管先。本番は S3、ローカルは MinIO。
+  #   コードから見れば同じ S3 API なので、保存経路を本番だけ別物にしない
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      # ★ Flyway は migrator で流す。アプリの読み書きは kaden_app
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/kaden
+      SPRING_DATASOURCE_USERNAME: kaden_app
+      SPRING_DATASOURCE_PASSWORD: kaden_app_dev
+      SPRING_FLYWAY_USER: kaden_migrator
+      SPRING_FLYWAY_PASSWORD: kaden_migrator_dev
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-only-secret-change-me-0123456789abcdef
+      VOICE_BASE_URL: http://voice:8001
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  voice:
+    build:
+      context: .
+      dockerfile: voice/Dockerfile
+    environment:
+      # ★ イメージの既定は production。ローカルではここで開発モードに落とす。
+      #   production のままだと PUBLIC_BASE_URL に https を要求され、
+      #   http://localhost では起動しない（本番では正しい挙動なので、
+      #   検証を緩めるのではなく環境を宣言する側で解決する）
+      APP_ENV: development
+      DATABASE_URL: postgresql://kaden_app:kaden_app_dev@db:5432/kaden
+      REDIS_URL: redis://redis:6379/0
+      # ★ api と同じ値でなければならない。ここがずれると、
+      #   api が発行したトークンを voice 側で検証できない
+      JWT_SECRET: dev-only-secret-change-me-0123456789abcdef
+      # ★ Twilio に登録する URL と 1 文字も違ってはいけない。
+      #   ローカルではトンネル（cloudflared / ngrok）の URL を入れる
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8001}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_CALLER_ID: ${TWILIO_CALLER_ID:-}
+      ASR_PROVIDER: ${ASR_PROVIDER:-null}
+      ASR_API_KEY: ${ASR_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: kaden-recordings
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      # ★ スキーマができてから上げる。api が Flyway を流す
+      api:
+        condition: service_started
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      # ブラウザから叩く URL なので localhost。コンテナ名ではない
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+      NEXT_PUBLIC_VOICE_BASE_URL: http://localhost:8001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  db-data:
+  minio-data:

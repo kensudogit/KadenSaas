@@ -1,0 +1,72 @@
+# ============================================================================
+# 業務 API の設定。
+#
+# ★ アプリの接続は kaden_app（RLS が効く側）。Flyway だけ kaden_migrator。
+#   1 つの接続で両方をやらない。migrator でアプリを動かすと RLS が素通りする。
+# ============================================================================
+
+spring:
+  application:
+    name: kaden-api
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/kaden}
+    username: ${SPRING_DATASOURCE_USERNAME:kaden_app}
+    password: ${SPRING_DATASOURCE_PASSWORD:kaden_app_dev}
+    hikari:
+      # ★ プールを使い回すので、テナントは必ずトランザクション単位で設定する。
+      #   接続単位で set すると、返却された接続に前のテナントの値が残る
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      auto-commit: false
+
+  jpa:
+    hibernate:
+      # ★ スキーマは Flyway が持つ。Hibernate に触らせない
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    user: ${SPRING_FLYWAY_USER:kaden_migrator}
+    password: ${SPRING_FLYWAY_PASSWORD:kaden_migrator_dev}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+
+kaden:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+    ttl-minutes: ${JWT_TTL_MINUTES:120}
+  cors:
+    origin: ${CORS_ORIGIN:http://localhost:3000}
+  # ★ 発信は voice サービスにしか投げない。ここから Twilio を直接叩かない
+  voice:
+    base-url: ${VOICE_BASE_URL:http://localhost:8001}
+  billing:
+    stripe-secret-key: ${STRIPE_SECRET_KEY:}
+    stripe-webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      # ★ 「プロセスが生きている」ではなく「DB に繋がる」で判定する。
+      #   前者だと DB 断でもロードバランサに入れられ続ける
+      show-details: never
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.kadensaas: ${LOG_LEVEL:INFO}
