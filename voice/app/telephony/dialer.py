@@ -15,10 +15,22 @@
 ★ 二重発信は DB の部分ユニークインデックスで止まっている前提だが、
   ここでも queued → dialing の遷移を条件付き UPDATE にしてある。
   同じ行に対する 2 回の発信要求は、2 回目が 0 行更新になって弾かれる。
+
+★ Twilio SDK の呼び出しは必ず別スレッドへ逃がす。twilio.rest.Client は
+  requests を使った**同期**クライアントで、await できない。async 関数の中で
+  そのまま呼ぶと、HTTP の往復（実測で数百ミリ秒、遅いときは秒単位）のあいだ
+  **イベントループ全体が止まる**。止まっている間は他の webhook も
+  ヘルスチェックも一切処理されない。
+
+  この壊れ方が厄介なのは、1 件ずつ手で発信している限り誰も気付かないこと。
+  同時発信が増えたときに初めて、statusCallback の応答が遅れ、Twilio が
+  タイムアウトして再送し、その再送でさらにループが詰まる。
+  負荷が高いときにいちばん壊れてほしくない経路が最初に壊れる。
 """
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
 from twilio.base.exceptions import TwilioRestException
@@ -97,7 +109,12 @@ async def dial(tenant_id: UUID | str, call_session_id: UUID | str) -> str:
 
     try:
         client = _client_or_fail()
-        call = client.calls.create(
+        # ★ to_thread で別スレッドへ逃がす。twilio.rest.Client は同期
+        #   （requests）なので、ここで直接 await せずに呼ぶと、
+        #   HTTP の往復のあいだイベントループ全体が停止する。
+        #   このサービスは webhook も受けているので、止めてはいけない。
+        call = await asyncio.to_thread(
+            client.calls.create,
             to=row["to_e164"],
             from_=row["from_e164"],
             # ★ 応答時の TwiML。ここで Media Stream を張る

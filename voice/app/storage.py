@@ -12,10 +12,17 @@
 
 ★ ローカルは MinIO、本番は S3。どちらも同じ API なので、
   保存経路を本番だけ別物にしない。「本番でだけ動かない」を避ける。
+
+★ boto3 は同期クライアント。async の処理から put() / delete() を
+  そのまま呼ぶと、通信のあいだイベントループが止まる。録音は 1 件が
+  数 MB あり、S3 への往復は数百ミリ秒〜秒単位になる。
+  非同期の呼び出し側は必ず put_async() / delete_async() を使うこと。
+  同期版を残してあるのは、スレッドへ逃がす境界を 1 箇所に見せるため。
 """
 
 from __future__ import annotations
 
+import asyncio
 import io
 from dataclasses import dataclass
 
@@ -99,6 +106,38 @@ def delete(key: str) -> None:
     """
     _s3().delete_object(Bucket=S3_BUCKET, Key=key)
     logger.info("録音を削除しました", key=key)
+
+
+# ---------------------------------------------------------------- 非同期の入口
+
+# ★ 同時に飛ばす S3 の通信の数。無制限にすると、1 サイクルで扱う件数ぶん
+#   スレッドを起こして帯域を食い合う。定期ジョブは急ぐ処理ではないので、
+#   細く安定して流すほうがよい。
+_S3_CONCURRENCY = asyncio.Semaphore(4)
+
+
+async def put_async(key: str, data: bytes,
+                    content_type: str = "audio/wav") -> StoredObject:
+    """put() をスレッドへ逃がす。async の処理からはこちらを使う。"""
+    async with _S3_CONCURRENCY:
+        return await asyncio.to_thread(put, key, data, content_type)
+
+
+async def delete_async(key: str) -> None:
+    """delete() をスレッドへ逃がす。"""
+    async with _S3_CONCURRENCY:
+        await asyncio.to_thread(delete, key)
+
+
+async def presigned_url_async(key: str, expires_seconds: int = 300) -> str:
+    """署名 URL の発行をスレッドへ逃がす。
+
+    ★ 署名そのものは通信を伴わないが、**最初の 1 回**だけは
+      boto3 のクライアント生成が走る。設定ファイルと資格情報の探索を
+      含むので数百ミリ秒かかることがあり、それがそのまま
+      イベントループの停止になる。境界を揃えておくほうが安全。
+    """
+    return await asyncio.to_thread(presigned_url, key, expires_seconds)
 
 
 def ensure_bucket() -> None:

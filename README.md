@@ -460,6 +460,7 @@ S3 の資格情報を持つのが voice だけだからで、api に署名を作
 ```bash
 sh scripts/check-boundaries.sh   # 設計上の境界（Twilio の位置・関門の唯一性）
 sh scripts/smoke-test.sh         # 起動中のスタックに対する機能確認
+sh scripts/perf-bench.sh         # 実用規模（通話 40 万件）での性能
 ```
 
 ```bash
@@ -467,9 +468,108 @@ sh scripts/smoke-test.sh         # 起動中のスタックに対する機能確
 docker exec -i kadensaas-db-1 psql -U postgres -d kaden < scripts/verify-schema.sql
 ```
 
-9 項目を確認する。テナント分離／他テナントを騙った書き込みの拒否／未設定時の
+10 項目を確認する。テナント分離／他テナントを騙った書き込みの拒否／未設定時の
 fail closed／二重発信の拒否／通話終了後の再架電／状態の単調前進／理由なし
-blocked の拒否／監査ログの削除拒否／KPI ビューの越境防止。
+blocked の拒否／監査ログの削除拒否／KPI ビューの越境防止／削除で全走査になる
+外部キーが無いこと。
+
+### 性能
+
+デモデータは通話 51 件しかない。**その規模では、遅くなる書き方をしても
+気付けない。** 全走査でも索引走査でも数ミリ秒で返るからで、
+実際に下の 3 つはどれも 51 件のときは 3ms 以下だった。
+
+```bash
+sh scripts/perf-bench.sh          # 投入 → 実行計画と HTTP を計測 → 削除
+sh scripts/perf-bench.sh --keep   # 削除しない（EXPLAIN を追いたいとき）
+```
+
+通話 40 万件・1 テナント・13 か月ぶんの合成データを専用テナント（`perfco`）に
+入れて測る。`demo` / `other` には触れない。
+
+実測して直したのは 3 つ。どれも「51 件では見えない」種類だった。
+
+**1. 集計の絞り込みが式になっていた。**
+`local_date` は `(started_at at time zone t.timezone)::date` で、索引が無い。
+しかも `timezone` は結合先の `tenants` にあるので、プランナは
+「全件読んでから式を評価する」しか選べない。KPI・分析・履歴の総件数が
+すべて `call_sessions` の全走査になっていた。
+
+> **多テナントではここが効く。** 全走査は他テナントの行も読んでから RLS で
+> 捨てるので、1 社のダッシュボードの重さが**基盤全体の通話量**で決まる。
+> 自社の通話が 100 件でも、隣の会社が 1000 万件持っていれば遅い。
+> 行を増やしたのは自分ではないので、問い合わせを受けても原因にたどり着けない。
+
+絶対時刻の範囲に直して `call_sessions_tenant_started_idx` に載せた
+（[`app_tenant_day_start()`](api/src/main/resources/db/migration/V14__query_performance.sql) /
+[`LocalDateWindow`](api/src/main/java/com/kadensaas/web/LocalDateWindow.java)）。
+併せて `/kpi/hourly` と `/kpi/blocked` に期間を持たせた（既定 30 日）。
+全期間の集計は、行が増えるほど確実に遅くなる。
+
+**2. キュー予約の索引が order by と並びが違っていた。**
+索引は `next_attempt_at`（＝ ASC NULLS **LAST**）、クエリは `nulls first`。
+NULL の位置が逆なので索引の順序を使えず、1 行取るために同 priority の塊
+9,772 行を読んで並べ替えていた。担当者が最も頻繁に押す操作で、
+コールリストが大きいほど重くなる。索引を `nulls first` に揃えた。
+
+**3. 外部キーの「参照する側」に索引が無かった。**
+PostgreSQL は親の主キーには索引を要求するが、子の列には自動で作らない。
+無くても INSERT / SELECT は正常に動く。気付くのは親を消したときで、
+親 1 行につき子を丸ごと走査する。
+
+> **遅いだけでは済まない。** そのあいだ行ロックを持ち続けるので、
+> 退会処理のつもりで打った 1 行の `delete` が call_sessions への書き込みと
+> 競合し続ける。**1 社を消そうとすると全社の架電が止まる。**
+
+| | 前 | 後 |
+| --- | ---: | ---: |
+| `GET /api/v1/call-history`（50 件・30 日） | 272 ms | **24 ms** |
+| `GET /api/v1/kpi/summary`（30 日） | 304 ms | **60 ms** |
+| `GET /api/v1/kpi/hourly` | 482 ms | **53 ms** |
+| `GET /api/v1/analytics/operator`（30 日） | 310 ms | **49 ms** |
+| `POST /api/v1/queue/next`（次の 1 件） | 22 ms | **11 ms** |
+| ダッシュボード同時 10 人 p95 | 1,020 ms | **319 ms** |
+| ダッシュボード同時 10 人 スループット | 16.6 req/s | **122 req/s** |
+| コールリスト 200 件の削除 | 11,123 ms | **6 ms** |
+| テナント 1 社の削除（通話 40 万件） | 11 分で未完了 | **12 秒** |
+
+数字そのものは機械に依存する。**見るのは実行計画のほうで、
+`Seq Scan on call_sessions` が出ていないこと。** こちらは機械に依存しない。
+
+#### voice 側
+
+音声とジョブは計測の軸が違うので、こちらは別に測ってある。
+
+**Twilio SDK をイベントループの上で呼んでいた。** `twilio.rest.Client` は
+`requests` を使った同期クライアントで、`await` できない。async 関数の中で
+そのまま呼ぶと、HTTP の往復のあいだ**イベントループ全体が止まる**。
+止まっている間は webhook もヘルスチェックも処理されない。
+1 件ずつ手で発信している限り誰も気付かず、同時発信が増えたときに初めて
+statusCallback の応答が遅れ、Twilio が再送し、その再送でさらに詰まる。
+`asyncio.to_thread` で逃がした（[`dialer.py`](voice/app/telephony/dialer.py)）。
+同じ理由で boto3（S3）も逃がしてある。
+
+**μ-law の変換を 1 サンプルずつ Python で回していた。**
+media ワーカーは 1 通話あたり毎秒 100 メッセージを捌く。計測すると
+1 メッセージ 22.3µs のうち 20.1µs（90%）がここだった。
+変換を byte 単位の `translate` に落とし、無音判定の二乗和は μ-law の
+バイトから直接引くようにした。結果は 1 ビットも変わらない
+（[`test_audio.py`](voice/tests/test_audio.py) が 256 通り全部で照合する）。
+
+**文字起こしの往復で音声の受信が止まっていた。**
+発話の切れ目で ASR を直接 `await` していたため、その間 WebSocket の
+読み取りが止まり、毎秒 50 フレームが受信バッファに溜まる。音は消えないが、
+発話の時刻がずれ、次の無音判定が遅れる。つまり **ASR が遅いほど
+文字起こしが不正確になる**。トラックごとの待ち行列に変え、
+詰まったら古い発話を捨てる（劣化はさせるが、通話は壊さない）。
+
+| | 前 | 後 |
+| --- | ---: | ---: |
+| media 1 メッセージの処理 | 22.3 µs | **5.4 µs** |
+| 1 コアあたりの同時通話（理論値） | 448 | **1,840** |
+| 発信中のイベントループ停止 | 数百 ms | **なし** |
+| 通話終了時の segment 保存 | 発話数ぶんの往復 | **1 往復** |
+| 定期ジョブ 1 サイクル | 件数 × 待ち時間 | **同時 4 件** |
 
 ### 自動テスト
 
@@ -481,8 +581,8 @@ api（JUnit）と voice（pytest）の両方を実行し、結果を 1 枚の HT
 `http://127.0.0.1:877/` で表示する。個別に走らせたい場合は下記。
 
 ```bash
-cd api && ./gradlew test                      # 42 件（Testcontainers。Docker が要る）
-cd voice && python -m pytest                  # 5 件（Twilio 署名検証）
+cd api && ./gradlew test                      # 61 件（Testcontainers。Docker が要る）
+cd voice && python -m pytest                  # 20 件（署名検証・μ-law・ASR の詰まり）
 python scripts/test-report.py --no-run        # 直近の結果からレポートだけ作り直す
 ```
 

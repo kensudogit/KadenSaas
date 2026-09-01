@@ -14,6 +14,23 @@
 ★ 冪等にする。同じ行を 2 回処理しても壊れないこと。
   ジョブは落ちて再起動するのが前提。
 
+★ 1 件ずつ順番に処理しない。どの処理も待ち時間の塊で、CPU はほぼ使わない。
+
+    録音の取得   Twilio からのダウンロード（数 MB） + S3 への保存
+    分析         LLM の応答待ち（数秒〜十数秒）
+
+  順番にやると、1 サイクルの所要時間が「件数 × 1 件の待ち時間」になる。
+  分析が 1 件 8 秒なら 20 件で 160 秒。--loop 60 で回していても実際は
+  160 秒に 1 周しかせず、溜まる速さのほうが速ければ差は開き続ける。
+  しかも待ち行列が伸びていることはログの件数からは分からない
+  （毎回きっちり 20 件処理できてしまうため）。
+
+  待ちは重ねられるので、同時実行数を決めて並べる。上限を置くのは、
+  外部 API のレート制限と、S3 への帯域を食い尽くさないため。
+
+★ 積み残しをログに出す。「20 件処理した」だけだと、
+  それが「20 件しか無かった」のか「上限で切った」のかが分からない。
+
 起動:
     python -m app.jobs.maintenance --loop 60
 """
@@ -50,6 +67,46 @@ BATCH_SIZE = 20
 # ★ 何度も失敗する行を無限に試さない。人が見るべき状態にする
 MAX_ATTEMPTS = 5
 
+# ★ 同時実行数。待ち時間を重ねるためのもので、CPU の数とは関係ない。
+#   録音は帯域（1 件数 MB）、分析は LLM のレート制限が上限を決める。
+RECORDING_CONCURRENCY = 4
+ANALYSIS_CONCURRENCY = 4
+
+# ★ 接続を使い回す。1 件ごとに AsyncClient を作ると、そのたびに
+#   TCP と TLS の確立が入る。同じホストへ続けて取りに行くので、
+#   使い回すだけで 1 件あたり数十〜数百ミリ秒変わる。
+_http: httpx.AsyncClient | None = None
+
+
+def _client() -> httpx.AsyncClient:
+    global _http
+    if _http is None:
+        _http = httpx.AsyncClient(
+            timeout=60.0,
+            # ★ 同時実行数に合わせる。少ないと自分で自分を待たせる
+            limits=httpx.Limits(max_connections=RECORDING_CONCURRENCY,
+                                max_keepalive_connections=RECORDING_CONCURRENCY),
+        )
+    return _http
+
+
+async def _close_client() -> None:
+    global _http
+    if _http is not None:
+        await _http.aclose()
+        _http = None
+
+
+async def _bounded(limit: int, coros) -> list:
+    """同時実行数を絞って並行に走らせる。例外は呼び出し側で扱う。"""
+    sem = asyncio.Semaphore(limit)
+
+    async def run(c):
+        async with sem:
+            return await c
+
+    return await asyncio.gather(*(run(c) for c in coros), return_exceptions=True)
+
 
 # ---------------------------------------------------------------- 録音の取得
 
@@ -76,19 +133,28 @@ async def fetch_recordings() -> int:
             BATCH_SIZE,
         )
 
+    # ★ 1 件の失敗で全体を止めない。並行にしても同じで、
+    #   例外は行ごとに受け止めて failed に倒す
+    results = await _bounded(
+        RECORDING_CONCURRENCY, [_fetch_one(row) for row in rows]
+    )
+
     moved = 0
-    for row in rows:
-        try:
-            await _fetch_one(row)
-            moved += 1
-        except Exception as e:  # noqa: BLE001
-            # ★ 1 件の失敗で全体を止めない
-            await _mark_recording_failed(row["tenant_id"], row["id"], str(e))
+    for row, result in zip(rows, results, strict=True):
+        if isinstance(result, BaseException):
+            await _mark_recording_failed(row["tenant_id"], row["id"], str(result))
             logger.warn(
                 "録音の取得に失敗しました",
                 recording_id=str(row["id"]),
-                error=str(e),
+                error=str(result),
             )
+        else:
+            moved += 1
+
+    if len(rows) == BATCH_SIZE:
+        # ★ 上限で切った可能性がある。黙って切ると「毎回きっちり 20 件」の
+        #   ログが並ぶだけで、溜まっていることに気付けない
+        logger.warn("録音の取得が上限に達しました（積み残しの可能性）", batch=BATCH_SIZE)
     return moved
 
 
@@ -102,15 +168,16 @@ async def _fetch_one(row) -> None:
         f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()
     ).decode()
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.get(url, headers={"Authorization": f"Basic {auth}"})
-        response.raise_for_status()
-        audio = response.content
+    response = await _client().get(url, headers={"Authorization": f"Basic {auth}"})
+    response.raise_for_status()
+    audio = response.content
 
     key = storage.object_key(
         str(row["tenant_id"]), str(row["call_session_id"]), sid
     )
-    stored = storage.put(key, audio)
+    # ★ boto3 は同期。ここで直接呼ぶと数 MB の転送のあいだ
+    #   イベントループが止まり、並行にした意味が無くなる
+    stored = await storage.put_async(key, audio)
 
     async with tenant_tx(row["tenant_id"]) as conn:
         await conn.execute(
@@ -170,26 +237,37 @@ async def purge_expired_recordings() -> int:
             BATCH_SIZE,
         )
 
+    results = await _bounded(
+        RECORDING_CONCURRENCY, [_purge_one(row) for row in rows]
+    )
+
     purged = 0
-    for row in rows:
-        try:
-            if row["storage_key"]:
-                storage.delete(row["storage_key"])
-            async with tenant_tx(row["tenant_id"]) as conn:
-                await conn.execute(
-                    """
-                    update recordings
-                       set status = 'deleted', deleted_at = now(), updated_at = now()
-                     where id = $1
-                    """,
-                    row["id"],
-                )
-            purged += 1
-        except Exception as e:  # noqa: BLE001
+    for row, result in zip(rows, results, strict=True):
+        if isinstance(result, BaseException):
             logger.warn(
-                "録音の削除に失敗しました", recording_id=str(row["id"]), error=str(e)
+                "録音の削除に失敗しました", recording_id=str(row["id"]), error=str(result)
             )
+        else:
+            purged += 1
+
+    if len(rows) == BATCH_SIZE:
+        logger.warn("録音の削除が上限に達しました（積み残しの可能性）", batch=BATCH_SIZE)
     return purged
+
+
+async def _purge_one(row) -> None:
+    if row["storage_key"]:
+        # ★ boto3 は同期。スレッドへ逃がす
+        await storage.delete_async(row["storage_key"])
+    async with tenant_tx(row["tenant_id"]) as conn:
+        await conn.execute(
+            """
+            update recordings
+               set status = 'deleted', deleted_at = now(), updated_at = now()
+             where id = $1
+            """,
+            row["id"],
+        )
 
 
 # ---------------------------------------------------------------- AI 分析
@@ -218,19 +296,33 @@ async def run_pending_analyses() -> int:
             BATCH_SIZE,
         )
 
+    # ★ LLM の応答待ちは重ねられる。順番に待つと 1 サイクルが
+    #   「件数 × 応答時間」になり、溜まる速さに追いつけなくなる
+    results = await _bounded(
+        ANALYSIS_CONCURRENCY, [_analyze_one(row) for row in rows]
+    )
+
     done = 0
-    for row in rows:
-        try:
-            result = await analyze(row["full_text"])
-            await _save_analysis(row["tenant_id"], row["id"], result)
+    for row, result in zip(rows, results, strict=True):
+        if isinstance(result, AnalysisError):
+            await _mark_analysis_failed(row["tenant_id"], row["id"], str(result))
+            logger.warn("通話分析に失敗しました", analysis_id=str(row["id"]), error=str(result))
+        elif isinstance(result, BaseException):
+            await _mark_analysis_failed(row["tenant_id"], row["id"], str(result))
+            logger.error(
+                "通話分析で予期しない例外", analysis_id=str(row["id"]), error=str(result)
+            )
+        else:
             done += 1
-        except AnalysisError as e:
-            await _mark_analysis_failed(row["tenant_id"], row["id"], str(e))
-            logger.warn("通話分析に失敗しました", analysis_id=str(row["id"]), error=str(e))
-        except Exception as e:  # noqa: BLE001
-            await _mark_analysis_failed(row["tenant_id"], row["id"], str(e))
-            logger.error("通話分析で予期しない例外", analysis_id=str(row["id"]), error=str(e))
+
+    if len(rows) == BATCH_SIZE:
+        logger.warn("通話分析が上限に達しました（積み残しの可能性）", batch=BATCH_SIZE)
     return done
+
+
+async def _analyze_one(row) -> None:
+    result = await analyze(row["full_text"])
+    await _save_analysis(row["tenant_id"], row["id"], result)
 
 
 async def _save_analysis(tenant_id, analysis_id, result) -> None:
@@ -330,6 +422,7 @@ async def main_async(interval: int | None) -> None:
                 return
             await asyncio.sleep(interval)
     finally:
+        await _close_client()
         await close_pool()
 
 

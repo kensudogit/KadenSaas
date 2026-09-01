@@ -26,6 +26,17 @@ import org.springframework.web.bind.annotation.*;
  * <p>★ 録音は「ある／なし」だけをここで返す。再生 URL は voice 側が
  * 署名付きで発行する（S3 の資格情報を持つのは voice だけ）。
  * ここで URL を作ると、api にも保管先の鍵を持たせることになる。
+ *
+ * <p>★ 期間の絞り込みは {@code cs.started_at} に対して行う。以前は
+ * {@code (cs.started_at at time zone t.timezone)::date} という式で絞っており、
+ * 索引が使えず、タイムゾーンのために tenants と結合する必要もあった。
+ * 一覧本体は limit 50 なので気付きにくいが、<b>総件数の count(*) が
+ * 毎回 call_sessions を全走査していた</b>（実測 374ms / 40 万件）。
+ * 詳しい理由は {@link LocalDateWindow}。
+ *
+ * <p>★ 総件数と一覧で結合を揃えない。件数を数えるのに顧客名・担当者名・
+ * 結果ラベルは要らない（いずれも一意キーへの左外部結合なので件数を変えない）。
+ * 会社名で検索するときだけ customers を結合する。
  */
 @RestController
 // ★ /api/v1/calls/history にしない。CallController が /api/v1/calls/{id} を
@@ -58,14 +69,14 @@ public class CallHistoryController {
 
         AuthUser user = CurrentUser.require();
 
-        LocalDate start = from != null ? from : LocalDate.now().minusDays(29);
-        LocalDate end = to != null ? to : LocalDate.now();
+        var window = LocalDateWindow.of(from, to);
         int size = Math.max(1, Math.min(limit, MAX_LIMIT));
         int skip = Math.max(0, offset);
+        boolean searching = q != null && !q.isBlank();
 
-        StringBuilder where = new StringBuilder(
-            " where (cs.started_at at time zone t.timezone)::date between ? and ? ");
-        List<Object> args = new ArrayList<>(List.of(start, end));
+        StringBuilder where = new StringBuilder(" where ")
+            .append(LocalDateWindow.sql("cs.started_at"));
+        List<Object> args = new ArrayList<>(List.of(window.from(), window.toExclusive()));
 
         // ★ オペレーターは自分の分だけ。画面ではなくここで絞る
         if (user.role() == AuthUser.Role.OPERATOR) {
@@ -90,7 +101,7 @@ public class CallHistoryController {
             args.add(disposition);
         }
 
-        if (q != null && !q.isBlank()) {
+        if (searching) {
             // 相手先番号か会社名で絞る
             where.append(" and (cs.to_e164 ilike ? or c.company_name ilike ?) ");
             String like = "%" + q.trim() + "%";
@@ -98,16 +109,14 @@ public class CallHistoryController {
             args.add(like);
         }
 
-        String base = """
-            from call_sessions cs
-            join tenants t on t.id = cs.tenant_id
-            left join customers c on c.id = cs.customer_id
-            left join users u on u.id = cs.operator_id
-            left join disposition_codes dc on dc.code = cs.disposition_code
-            """;
+        // ★ 件数を数えるのに必要な結合だけを持つ。会社名で検索するときだけ
+        //   customers が要る。担当者名・結果ラベルは件数に影響しない
+        String countFrom = searching
+            ? " from call_sessions cs left join customers c on c.id = cs.customer_id "
+            : " from call_sessions cs ";
 
         Integer total = jdbc.queryForObject(
-            "select count(*) " + base + where, Integer.class, args.toArray());
+            "select count(*) " + countFrom + where, Integer.class, args.toArray());
 
         List<Object> pageArgs = new ArrayList<>(args);
         pageArgs.add(size);
@@ -133,7 +142,11 @@ public class CallHistoryController {
                    (select r.id from recordings r
                      where r.call_session_id = cs.id and r.status = 'stored'
                      order by r.created_at desc limit 1) as recording_id
-            """ + base + where + " order by cs.started_at desc limit ? offset ?",
+              from call_sessions cs
+              left join customers c on c.id = cs.customer_id
+              left join users u on u.id = cs.operator_id
+              left join disposition_codes dc on dc.code = cs.disposition_code
+            """ + where + " order by cs.started_at desc limit ? offset ?",
             pageArgs.toArray());
 
         return Map.of(

@@ -100,7 +100,9 @@ async def playback_url(
         duration = row["duration_seconds"]
 
     try:
-        url = storage.presigned_url(storage_key, expires_seconds=URL_TTL_SECONDS)
+        url = await storage.presigned_url_async(
+            storage_key, expires_seconds=URL_TTL_SECONDS
+        )
     except Exception as e:  # noqa: BLE001 — 保管先の設定不備を利用者に伝える
         logger.error("再生 URL を発行できませんでした", error=str(e))
         raise HTTPException(

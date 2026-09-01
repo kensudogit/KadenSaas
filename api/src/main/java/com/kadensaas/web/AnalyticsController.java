@@ -24,6 +24,10 @@ import org.springframework.web.bind.annotation.*;
  * <p>★ 期間で絞れるようにする。全期間の平均だけだと、施策の前後で
  * 何が変わったかが見えない。既定は直近 30 日。
  *
+ * <p>★ 絞り込みは {@code local_date}（式）ではなく {@code started_at}（索引付き）で行う。
+ * 理由は {@link LocalDateWindow} に書いてある。ここを式に戻すと、
+ * すべての集計が call_sessions の全走査に落ちる。
+ *
  * <p>★ manager 以上に限定する。担当者別の成績は評価に直結するので、
  * オペレーターが互いの数字を見られる状態を既定にはしない。
  */
@@ -42,15 +46,6 @@ public class AnalyticsController {
         this.jdbc = jdbc;
     }
 
-    /** 既定は直近 30 日。 */
-    private LocalDate start(LocalDate from) {
-        return from != null ? from : LocalDate.now().minusDays(29);
-    }
-
-    private LocalDate end(LocalDate to) {
-        return to != null ? to : LocalDate.now();
-    }
-
     /**
      * 時間帯別。
      *
@@ -60,16 +55,18 @@ public class AnalyticsController {
     @GetMapping("/hourly")
     public List<Map<String, Object>> hourly(@RequestParam(required = false) LocalDate from,
                                             @RequestParam(required = false) LocalDate to) {
+        var w = LocalDateWindow.of(from, to);
         return jdbc.queryForList("""
             select local_hour,
                    count(*) filter (where counts_in_denominator)                  as denominator,
                    count(*) filter (where counts_in_denominator and is_connected) as connected,
                    count(*) filter (where counts_in_denominator and is_success)   as successes
               from kpi_call_facts
-             where local_date between ? and ?
+             where
+            """ + LocalDateWindow.sql("started_at") + """
              group by local_hour
              order by local_hour
-            """, start(from), end(to));
+            """, w.from(), w.toExclusive());
     }
 
     /**
@@ -81,16 +78,18 @@ public class AnalyticsController {
     @GetMapping("/weekday")
     public List<Map<String, Object>> weekday(@RequestParam(required = false) LocalDate from,
                                              @RequestParam(required = false) LocalDate to) {
+        var w = LocalDateWindow.of(from, to);
         return jdbc.queryForList("""
             select local_weekday,
                    count(*) filter (where counts_in_denominator)                  as denominator,
                    count(*) filter (where counts_in_denominator and is_connected) as connected,
                    count(*) filter (where counts_in_denominator and is_success)   as successes
               from kpi_call_facts
-             where local_date between ? and ?
+             where
+            """ + LocalDateWindow.sql("started_at") + """
              group by local_weekday
              order by local_weekday
-            """, start(from), end(to));
+            """, w.from(), w.toExclusive());
     }
 
     /**
@@ -102,31 +101,43 @@ public class AnalyticsController {
      *
      * <p>★ 退職などで users から消えた担当者の通話も残る。
      * 名前を内部結合にすると、その分が黙って集計から落ちる。
+     *
+     * <p>★ 名前の結合は集計の**後**に行う。先に結合すると、
+     * 通話 1 行ごとに users を引くことになる。担当者は数十人しかいないのに、
+     * 通話の件数ぶん結合するのは無駄で、しかも件数に比例して伸びる。
      */
     @GetMapping("/operator")
     public List<Map<String, Object>> operator(@RequestParam(required = false) LocalDate from,
                                               @RequestParam(required = false) LocalDate to) {
+        var w = LocalDateWindow.of(from, to);
         return jdbc.queryForList("""
-            select f.operator_id,
+            with agg as (
+              select f.operator_id,
+                     count(*) filter (where f.counts_in_denominator)  as denominator,
+                     count(*) filter (where f.counts_in_denominator
+                                        and f.is_connected)           as connected,
+                     count(*) filter (where f.counts_in_denominator
+                                        and f.is_conversation)        as conversations,
+                     count(*) filter (where f.counts_in_denominator
+                                        and f.is_success)             as successes,
+                     count(*) filter (where f.was_blocked)            as blocked,
+                     coalesce(avg(f.duration_seconds)
+                       filter (where f.is_connected and f.duration_seconds > 0), 0)::int
+                       as avg_talk_seconds
+                from kpi_call_facts f
+               where
+            """ + LocalDateWindow.sql("f.started_at") + """
+               group by f.operator_id
+            )
+            select agg.operator_id,
                    coalesce(u.display_name, '（担当者なし）') as operator_name,
                    u.status                                   as operator_status,
-                   count(*) filter (where f.counts_in_denominator)  as denominator,
-                   count(*) filter (where f.counts_in_denominator
-                                      and f.is_connected)           as connected,
-                   count(*) filter (where f.counts_in_denominator
-                                      and f.is_conversation)        as conversations,
-                   count(*) filter (where f.counts_in_denominator
-                                      and f.is_success)             as successes,
-                   count(*) filter (where f.was_blocked)            as blocked,
-                   coalesce(avg(f.duration_seconds)
-                     filter (where f.is_connected and f.duration_seconds > 0), 0)::int
-                     as avg_talk_seconds
-              from kpi_call_facts f
-              left join users u on u.id = f.operator_id
-             where f.local_date between ? and ?
-             group by f.operator_id, u.display_name, u.status
-             order by successes desc, denominator desc
-            """, start(from), end(to));
+                   agg.denominator, agg.connected, agg.conversations,
+                   agg.successes, agg.blocked, agg.avg_talk_seconds
+              from agg
+              left join users u on u.id = agg.operator_id
+             order by agg.successes desc, agg.denominator desc
+            """, w.from(), w.toExclusive());
     }
 
     /**
@@ -139,12 +150,14 @@ public class AnalyticsController {
     @GetMapping("/blocked")
     public List<Map<String, Object>> blocked(@RequestParam(required = false) LocalDate from,
                                              @RequestParam(required = false) LocalDate to) {
+        var w = LocalDateWindow.of(from, to);
         return jdbc.queryForList("""
             select blocked_reason, count(*) as count
               from kpi_call_facts
-             where was_blocked and local_date between ? and ?
+             where was_blocked and
+            """ + LocalDateWindow.sql("started_at") + """
              group by blocked_reason
              order by count desc
-            """, start(from), end(to));
+            """, w.from(), w.toExclusive());
     }
 }

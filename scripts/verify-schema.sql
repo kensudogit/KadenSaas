@@ -138,5 +138,64 @@ set local role kaden_app;
 set local app.tenant_id = '11111111-1111-1111-1111-111111111111';
 select count(*) as "A から見える通話ファクト（期待 2、B は含まない）" from kpi_call_facts;
 commit;
+
+\echo ''
+\echo '### 10. 削除で全走査になる外部キーが無いこと'
+-- ★ PostgreSQL は外部キーの「参照する側」に索引を作らない。
+--   抜けていても INSERT / SELECT は正常に動くので気付かない。
+--   気付くのは親を消したときで、親 1 行につき子を丸ごと走査する。
+--   実測では call_targets を 200 行消すのに 11 秒かかった（索引ありは 6ms）。
+--   キャンペーン 1 本の削除で 55 分、テナントの削除は終わらない。
+--
+--   ★ そのあいだ行ロックを持ち続けるので、1 社を消そうとすると
+--     全社の架電が止まる。遅いだけでは済まない。
+--
+--   users を親とするものは除く（削除せず status で無効化する運用のため）。
+--   users を実際に削除する運用に変えるなら、この除外も外すこと。
+--
+-- ★ 判定の仕方。列の並びの完全一致は要求しない。要求すると、
+--   実害の無いものまで挙がって「毎回 1 件出るので誰も見ない」検査になる
+--   （call_metrics の (tenant_id, call_session_id) は、主キーの
+--   (call_session_id) だけで索引走査でき、tenant_id は絞り込みで済む）。
+--
+--   逆に「先頭列が外部キーの列のどれか」まで緩めると、何も検知しなくなる。
+--   このスキーマの外部キーはすべて tenant_id で始まり、tenant_id 先頭の索引は
+--   どの表にもあるからで、それは「そのテナントの行を全部読む」план でしかない。
+--
+--   使えるのは「索引の先頭が、その外部キーの列だけで構成されていて、かつ
+--   tenant_id 以外の列を含む」場合。tenant_id 以外が入って初めて絞り込める。
+--
+--   tenant_id 1 列だけの外部キー（... -> tenants）は除く。
+--   テナントは 1 行しか消さないので走査も 1 回で、全テーブルが該当してしまう。
+select coalesce(string_agg(child || ' -> ' || parent, ' / '), '（無し）')
+         as "索引で辿れない外部キー（期待 無し）"
+  from (
+    select c.conrelid::regclass::text as child,
+           c.confrelid::regclass::text as parent
+      from pg_constraint c
+      join pg_attribute ta
+        on ta.attrelid = c.conrelid and ta.attname = 'tenant_id'
+     where c.contype = 'f'
+       and c.connamespace = 'public'::regnamespace
+       and c.confrelid::regclass::text in ('campaigns', 'customers',
+                                           'call_targets', 'call_sessions')
+       -- tenant_id 単独の外部キーは対象外
+       and c.conkey <> array[ta.attnum]
+       and not exists (
+         select 1
+           from pg_index i
+           cross join lateral (
+             select (string_to_array(i.indkey::text, ' ')::smallint[])
+                      [1:least(array_length(c.conkey, 1),
+                               array_length(string_to_array(i.indkey::text, ' '), 1))]
+               as lead
+           ) p
+          where i.indrelid = c.conrelid
+            -- 先頭列がすべてこの外部キーの列であること
+            and c.conkey @> p.lead
+            -- かつ tenant_id 以外を含むこと（tenant_id だけでは絞れない）
+            and exists (select 1 from unnest(p.lead) x where x <> ta.attnum))
+  ) missing;
+
 \echo ''
 \echo '=== 検証おわり ==='
