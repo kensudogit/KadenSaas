@@ -20,6 +20,23 @@ plugins {
 group = "com.kadensaas"
 version = "0.1.0"
 
+// ★ JUnit を Spring Boot 3.4.1 の既定（5.11.4 / platform 1.11.4）から上げる。
+//
+//   VS Code の Test Runner for Java（vscjava.vscode-java-test 0.46.0）は
+//   Eclipse JDT の JUnit5 ランナーを使い、同梱の junit-platform 1.14.4 で
+//   コンパイルされている。org.junit.platform.engine.OutputDirectoryCreator は
+//   platform 1.14 で入ったクラス（1.13 までは
+//   engine.reporting.OutputDirectoryProvider という別の名前）なので、
+//   プロジェクト側が 1.13 以下だと ▷ から実行した瞬間に
+//     NoClassDefFoundError: org/junit/platform/engine/OutputDirectoryCreator
+//   で落ちる。gradlew test は自前の launcher を使うので通ってしまい、
+//   「CI は緑なのにエディタからだけ落ちる」という切り分けにくい形で出る。
+//
+//   ★ 1.13 では足りない。拡張が同梱する 1.14.4 に合わせること。
+//     Boot の BOM は junit-bom をこのプロパティで引くので、
+//     jupiter と platform が揃って上がる（5.14.4 → platform 1.14.4）。
+extra["junit-jupiter.version"] = "5.14.4"
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
@@ -62,6 +79,12 @@ dependencies {
     // ★ RLS は本物の PostgreSQL でしか検証できない。H2 では意味がない
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
     testImplementation("org.testcontainers:postgresql:1.20.4")
+
+    // ★ launcher を明示する。書かないと Gradle 8.12 が自前で古い
+    //   junit-platform-launcher を混ぜ、engine（1.13.4）と食い違って
+    //     JUnitException: OutputDirectoryProvider not available
+    //   で discover の段階から落ちる。junit-bom が揃えるのでバージョンは書かない
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.withType<Test> {
