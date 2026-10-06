@@ -15,6 +15,77 @@ Next.js ─┬─→ api    (Spring Boot)  業務 API・スキーマの所有者
               PostgreSQL (RLS) / Redis / S3
 ```
 
+## Portfolio Overview
+
+| Item | Description |
+|---|---|
+| **Problem** | アウトバウンドコールでは、発信可否・通話状態・録音・AI処理・テナント分離・監査を別々に実装すると、静かな誤動作や情報漏えいが起きやすい |
+| **Solution** | 顧客リストから発信、通話、録音、文字起こし、AI要約、再架電、KPIまでを一つのマルチテナントSaaSとして統合 |
+| **Architecture** | Next.js → Spring Boot business API / FastAPI voice services → PostgreSQL RLS / Redis / S3-compatible storage → Twilio |
+| **Safety by Design** | DialingGate、CallSid idempotency、fail-closed RLS、音声ストリーム分離、録音アクセス監査・保存期限 |
+| **Differentiators** | 「動くデモ」だけでなく、境界検査・スモークテスト・40万件性能検証・権限表整合性までコードで検証 |
+
+## Architecture
+
+```text
+                         ┌──────────────────────┐
+                         │       Next.js        │
+                         │ Operator / Admin UI  │
+                         └──────────┬───────────┘
+                                    │
+                   ┌────────────────┴────────────────┐
+                   ▼                                 ▼
+        ┌─────────────────────┐          ┌─────────────────────┐
+        │ Spring Boot API     │          │ FastAPI Voice       │
+        │ Business / Schema   │          │ Twilio / Audio / AI │
+        │ DialingGate / Auth  │          │ Webhook / Media     │
+        └──────────┬──────────┘          └──────────┬──────────┘
+                   │                                 │
+                   └──────────────┬──────────────────┘
+                                  ▼
+                    PostgreSQL RLS / Redis / S3
+                                  │
+                                  ▼
+                               Twilio
+```
+
+## Engineering Differentiators
+
+- **Dialing safety as an invariant** — every outbound call must pass a single `DialingGate`; blocked attempts are retained with reasons.
+- **Webhook idempotency** — Twilio `CallSid` is the external identity and duplicate/reordered callbacks are handled explicitly.
+- **Fail-closed tenant isolation** — PostgreSQL RLS returns no business rows when tenant context is absent instead of exposing all tenants.
+- **Independent scaling boundaries** — webhook/API traffic and high-frequency media streams are separated because their load characteristics differ.
+- **Privacy-aware recordings** — object storage is private, access uses short-lived signed URLs, access is audited, and retention is tenant-controlled.
+- **Authorization verification** — declared permission matrices are exercised against real endpoints so documentation cannot silently drift from enforcement.
+- **Production-scale validation** — performance scripts exercise approximately 400,000 synthetic call records rather than relying only on demo-size data.
+
+## Reliability & Security Model
+
+```text
+Request
+  │
+  ├─ Tenant Context ──► PostgreSQL RLS (fail closed)
+  │
+  ├─ Authorization ───► Server-side role enforcement
+  │
+  └─ Dial Request ────► DialingGate
+                         ├─ DNC
+                         ├─ allowed hours / days
+                         ├─ attempt limits
+                         ├─ duplicate-call prevention
+                         └─ tenant / platform stop switches
+                                  │
+                                  ▼
+                             queued session
+                                  │
+                                  ▼
+                                Twilio
+```
+
+## Portfolio Role
+
+KadenSaas is the **Enterprise Domain SaaS / AI Calling Architecture** asset in this portfolio. It demonstrates how Java/Spring business services, Python/FastAPI real-time services, PostgreSQL tenant isolation, telephony, AI processing, privacy controls, and operational verification can be combined without collapsing all responsibilities into one service.
+
 ---
 
 ## 守っている 5 つの原則
@@ -498,376 +569,3 @@ sh scripts/perf-bench.sh --keep   # 削除しない（EXPLAIN を追いたいと
 しかも `timezone` は結合先の `tenants` にあるので、プランナは
 「全件読んでから式を評価する」しか選べない。KPI・分析・履歴の総件数が
 すべて `call_sessions` の全走査になっていた。
-
-> **多テナントではここが効く。** 全走査は他テナントの行も読んでから RLS で
-> 捨てるので、1 社のダッシュボードの重さが**基盤全体の通話量**で決まる。
-> 自社の通話が 100 件でも、隣の会社が 1000 万件持っていれば遅い。
-> 行を増やしたのは自分ではないので、問い合わせを受けても原因にたどり着けない。
-
-絶対時刻の範囲に直して `call_sessions_tenant_started_idx` に載せた
-（[`app_tenant_day_start()`](api/src/main/resources/db/migration/V14__query_performance.sql) /
-[`LocalDateWindow`](api/src/main/java/com/kadensaas/web/LocalDateWindow.java)）。
-併せて `/kpi/hourly` と `/kpi/blocked` に期間を持たせた（既定 30 日）。
-全期間の集計は、行が増えるほど確実に遅くなる。
-
-**2. キュー予約の索引が order by と並びが違っていた。**
-索引は `next_attempt_at`（＝ ASC NULLS **LAST**）、クエリは `nulls first`。
-NULL の位置が逆なので索引の順序を使えず、1 行取るために同 priority の塊
-9,772 行を読んで並べ替えていた。担当者が最も頻繁に押す操作で、
-コールリストが大きいほど重くなる。索引を `nulls first` に揃えた。
-
-**3. 外部キーの「参照する側」に索引が無かった。**
-PostgreSQL は親の主キーには索引を要求するが、子の列には自動で作らない。
-無くても INSERT / SELECT は正常に動く。気付くのは親を消したときで、
-親 1 行につき子を丸ごと走査する。
-
-> **遅いだけでは済まない。** そのあいだ行ロックを持ち続けるので、
-> 退会処理のつもりで打った 1 行の `delete` が call_sessions への書き込みと
-> 競合し続ける。**1 社を消そうとすると全社の架電が止まる。**
-
-| | 前 | 後 |
-| --- | ---: | ---: |
-| `GET /api/v1/call-history`（50 件・30 日） | 272 ms | **24 ms** |
-| `GET /api/v1/kpi/summary`（30 日） | 304 ms | **60 ms** |
-| `GET /api/v1/kpi/hourly` | 482 ms | **53 ms** |
-| `GET /api/v1/analytics/operator`（30 日） | 310 ms | **49 ms** |
-| `POST /api/v1/queue/next`（次の 1 件） | 22 ms | **11 ms** |
-| ダッシュボード同時 10 人 p95 | 1,020 ms | **319 ms** |
-| ダッシュボード同時 10 人 スループット | 16.6 req/s | **122 req/s** |
-| コールリスト 200 件の削除 | 11,123 ms | **6 ms** |
-| テナント 1 社の削除（通話 40 万件） | 11 分で未完了 | **12 秒** |
-
-数字そのものは機械に依存する。**見るのは実行計画のほうで、
-`Seq Scan on call_sessions` が出ていないこと。** こちらは機械に依存しない。
-
-#### voice 側
-
-音声とジョブは計測の軸が違うので、こちらは別に測ってある。
-
-**Twilio SDK をイベントループの上で呼んでいた。** `twilio.rest.Client` は
-`requests` を使った同期クライアントで、`await` できない。async 関数の中で
-そのまま呼ぶと、HTTP の往復のあいだ**イベントループ全体が止まる**。
-止まっている間は webhook もヘルスチェックも処理されない。
-1 件ずつ手で発信している限り誰も気付かず、同時発信が増えたときに初めて
-statusCallback の応答が遅れ、Twilio が再送し、その再送でさらに詰まる。
-`asyncio.to_thread` で逃がした（[`dialer.py`](voice/app/telephony/dialer.py)）。
-同じ理由で boto3（S3）も逃がしてある。
-
-**μ-law の変換を 1 サンプルずつ Python で回していた。**
-media ワーカーは 1 通話あたり毎秒 100 メッセージを捌く。計測すると
-1 メッセージ 22.3µs のうち 20.1µs（90%）がここだった。
-変換を byte 単位の `translate` に落とし、無音判定の二乗和は μ-law の
-バイトから直接引くようにした。結果は 1 ビットも変わらない
-（[`test_audio.py`](voice/tests/test_audio.py) が 256 通り全部で照合する）。
-
-**文字起こしの往復で音声の受信が止まっていた。**
-発話の切れ目で ASR を直接 `await` していたため、その間 WebSocket の
-読み取りが止まり、毎秒 50 フレームが受信バッファに溜まる。音は消えないが、
-発話の時刻がずれ、次の無音判定が遅れる。つまり **ASR が遅いほど
-文字起こしが不正確になる**。トラックごとの待ち行列に変え、
-詰まったら古い発話を捨てる（劣化はさせるが、通話は壊さない）。
-
-| | 前 | 後 |
-| --- | ---: | ---: |
-| media 1 メッセージの処理 | 22.3 µs | **5.4 µs** |
-| 1 コアあたりの同時通話（理論値） | 448 | **1,840** |
-| 発信中のイベントループ停止 | 数百 ms | **なし** |
-| 通話終了時の segment 保存 | 発話数ぶんの往復 | **1 往復** |
-| 定期ジョブ 1 サイクル | 件数 × 待ち時間 | **同時 4 件** |
-
-### 自動テスト
-
-```bash
-python scripts/test-report.py --serve
-```
-
-api（JUnit）と voice（pytest）の両方を実行し、結果を 1 枚の HTML にまとめて
-`http://127.0.0.1:877/` で表示する。個別に走らせたい場合は下記。
-
-```bash
-cd api && ./gradlew test                      # 61 件（Testcontainers。Docker が要る）
-cd voice && python -m pytest                  # 20 件（署名検証・μ-law・ASR の詰まり）
-python scripts/test-report.py --no-run        # 直近の結果からレポートだけ作り直す
-```
-
-レポートは失敗を先頭に並べる。読まれるのは落ちているときなので、
-「何件通ったか」より「何が壊れているか」を先に出す。失敗があれば
-終了コード 1 を返すので、そのまま CI に置ける。127.0.0.1 に限定して配信する
-（結果には内部のクラス名とスタックがそのまま載るため、既定で LAN に開かない）。
-
-### ★ が付いたテストについて
-
-テスト名の先頭の ★ は、開発中に実際に踏んだ不具合を固定しているという印。
-いずれも**例外が出ず、200 が返り、ただ結果が 0 件になる**（あるいは
-間違った時刻で判定される）種類の失敗で、疎通確認では見つからない。
-レポート上では「過去の不具合」として印が付く。
-
-主なものは次のとおり。
-
-| テスト | 固定している失敗 |
-| --- | --- |
-| 派生クエリメソッドでもテナントが効く | `TenantScopedRepository` を継承し忘れると、派生クエリが Spring のトランザクションに入らず RLS が常に 0 件を返す |
-| テナント未設定なら 1 行も見えない | fail open になると、認証を通らない経路から全テナントが読める |
-| 登録直後のテナントの必須列が埋まっている | `hibernate.jdbc.time_zone: UTC` が `time` 型にも効き、架電可能時間が JVM のタイムゾーン分ずれて DB に入る |
-| 止めた発信も理由つきで記録される | 握りつぶすと「なぜかけなかったのか」を後から説明できない |
-| 発信者番号が未設定なら発信しない | 設定が無いまま通すと `from` が null のまま Twilio に渡る |
-| 架電結果に DO_NOT_CALL を選ぶと拒否リストに入る | 分かれていると、次のキャンペーンで同じ人にかかる |
-
-> **署名検証のテストに陽性対照を必ず含める。**
-> 「署名なしで 403」だけでは、検証が壊れて常に 403 を返す実装でも通ってしまう。
-
-> **テストは、落ちることを一度確かめてから信じる。**
-> 上記はいずれも、実装をわざと壊して赤くなることを確認してある。
-> 通るだけのテストは、何も見ていなくても通る。
-
----
-
-## KPI
-
-**率を返さない。分子と分母を返す。**
-率だけを返すと画面ごとに解釈が変わり、「同じ指標なのに数字が違う」で毎月揉める。
-`32.4%` ではなく `162 / 500` を渡し、表示側で組み立てる。
-
-定義は [`kpi_call_facts`](api/src/main/resources/db/migration/V6__roles_and_kpi_views.sql) ビューが唯一の出所。
-ここに新しい集計 SQL を書き足さない。書き足すと、api と voice で「接続率」が別物になる。
-
-分母の扱いは `disposition_codes.excluded_from_denominator` が持つ。
-無効番号を分母から外すなら、**無効番号率を併記する**運用が要る。
-外したままだとリスト品質が悪いほど接続率が良く見える。
-
-**「関門が止めた件数」を必ず画面に出す。** ここが想定より多いとき、
-架電数が伸びない原因はリスト側（DNC 過多・時間帯外）にある。
-出していないと、担当者の頑張り不足として扱われてしまう。
-
----
-
-## デプロイ（AWS）
-
-[`infra/terraform`](infra/terraform)。5 サービスに分ける。
-
-| サービス | 公開 | 台数の軸 |
-| --- | --- | --- |
-| `api` | ALB `/api/v1/*` | 同時ユーザー数 |
-| `voice-web` | ALB `/twilio/*` `/internal/*` | webhook の流量 |
-| `voice-media` | ALB `/media` | **同時通話数** |
-| `voice-jobs` | **公開しない** | 常に 1 台 |
-| `web` | ALB `/*` | 同時ユーザー数 |
-
-- `voice-jobs` に ALB を繋がない。HTTP を持たないので、ターゲットグループを付けると永久にヘルスチェック待ちになる。
-- `voice-jobs` は 1 台だけ。複数だと同じ録音を 2 回取りに行く。
-- ALB の `idle_timeout` を 3600 にしてある。既定の 60 秒だと、無音が続いた通話で Media Stream が切断される。
-- 秘密情報は Secrets Manager。**Terraform で値を設定していない**（tfstate に平文で残さないため）。作成後に CLI で投入する。
-
-### Railway
-
-ルートに `Dockerfile` を置いていない（5 サービスあるため）。Railway は既定で
-リポジトリのルートに `Dockerfile` を探すので、**サービスごとにどの Dockerfile を
-使うかを指定しないと** 次のエラーで失敗する。
-
-```
-couldn't locate the dockerfile at path Dockerfile in code archive
-```
-
-サービスは 5 つ作る。それぞれで **Settings → Build → Dockerfile Path** を設定する。
-
-| サービス | Dockerfile Path | Start Command | ドメイン |
-| --- | --- | --- | --- |
-| `api` | `api/Dockerfile` | （空。イメージの既定） | 生成する |
-| `voice-web` | `voice/Dockerfile` | `entrypoint web` | 生成する |
-| `voice-media` | `voice/Dockerfile` | `entrypoint media` | 生成する |
-| `voice-jobs` | `voice/Dockerfile` | `entrypoint jobs` | **生成しない** |
-| `web` | `web/Dockerfile` | （空） | 生成する |
-
-`railway/*.toml` に同じ内容を用意してある。Settings → **Config as Code** に
-パス（例 `railway/api.toml`）を入れれば設定ファイルから読ませられる。
-
-> **★ ただし config as code が適用されないことがある。**
-> 別プロジェクトで `railway.toml` を置いても `preDeployCommand` が実行されず、
-> 原因を特定できなかった。**確実なのは Settings に直接書く方法**なので、
-> まずそちらで動かし、config as code はうまくいけば使う、という順序で扱うこと。
-> 適用されたかどうかは「`voice-jobs` が Active になるか」（ヘルスチェックが
-> 付いていないこと）などで確認できる。
-
-#### 各サービスの変数
-
-`JWT_SECRET` は **api / voice-web / voice-media / voice-jobs で同一の値**にする。
-ずれると「api では通るのに voice で 401」になり、切り分けに時間がかかる。
-
-`voice-media` には `PORT` と `MEDIA_PORT` を**同じ値**（例 `8080`）で入れる。
-`entrypoint media` は `MEDIA_PORT` を見て bind するので、`PORT` だけ入れると
-Railway が待つポートと合わずヘルスチェックが通らない。
-
-`web` の `NEXT_PUBLIC_*` は**ビルド時に埋め込まれる**。Variables に入れても
-反映されないので、Settings → Build → Build Arguments で渡すこと。
-
-#### DB の接続情報
-
-`DATABASE_URL` を `postgresql://user:pass@host:5432/db` の形で渡せばよい
-（Railway が Postgres を繋いだときに配る形そのまま）。
-api 側で `jdbc:postgresql://...` + ユーザー / パスワードに分解する。
-`SPRING_DATASOURCE_*` を手で 3 つに分けて設定する必要はない。
-
-`DATABASE_MIGRATOR_URL` も同じ形で渡す。未設定なら Flyway は
-`spring.datasource` の資格情報をそのまま使う（別のロールに勝手に
-フォールバックしない）。本番では BYPASSRLS を持つロールを渡して分離すること。
-
-> **★ 変数名を打ち間違えても何も言われない。**
-> `DATABSE_URL` のような綴り間違いがあると、アプリは
-> application.yml の既定値（localhost）にフォールバックして
-> 「Connection to localhost:5433 refused」で落ちる。
-> ログに出るのは接続エラーだけで、「変数名が違う」とは出ない。
-> 502 になったらまず `railway variables` で名前を確認すること。
-
-#### マイグレーション
-
-`api` の起動時に Flyway が流れる。`voice-*` は `api` が一度起動してから上げる。
-
-Railway の Postgres が配る `DATABASE_URL` は superuser なので、
-**そのまま使うと RLS が効かない**。下の「マネージド Postgres での注意」を必ず読むこと。
-
-### ★ マネージド Postgres での注意
-
-**`db/bootstrap-roles.sql` を必ず 1 回流す。**
-
-マネージド DB が配る既定の接続ユーザーは superuser か所有者であることが多い。
-そのまま `DATABASE_URL` に使うと、`force row level security` は superuser に効かないため、
-**RLS が「書かれているのに 1 行も効かない」状態**になる。アプリは正常に動くので気付けない。
-
-起動時に接続ロールを検査して止める。api は
-[`RlsEnforcementCheck`](api/src/main/java/com/kadensaas/config/RlsEnforcementCheck.java)、
-voice は [`assert_rls_enforced`](voice/app/db/engine.py)。
-**両方に置くこと。片方だけ守っても、もう片方から漏れる。**
-
-`APP_ENV=production` のときだけ起動を止める（開発中は警告のみ）。
-Flyway は BYPASSRLS を持つ `kaden_migrator` で流すのが正しいので、検査の対象外。
-見るのはアプリが実際に使う接続。
-
-```
-アプリの接続ロール postgres が superuser のため、RLS が適用されません。
-テナント分離が無効の状態です
-```
-
-これが出たら **意図した停止**。動かないほうが、静かに漏れているよりよい。
-
-また PostgreSQL 15 以降、`public` スキーマの CREATE 権限が PUBLIC から外れた。
-データベース単位の grant だけでは Flyway が最初のテーブルすら作れない。
-
----
-
-### must be owner of table xxx（マイグレーションが失敗する）
-
-Flyway を流すロールが、対象のテーブルの**所有者ではない**。
-
-PostgreSQL では権限（grant）と所有権（owner）が別物で、
-`all privileges` を持っていても所有者でなければ `alter` も `drop` もできない。
-`create table` は通るので、**新しいテーブルを足すマイグレーションは成功し続け、
-既存のテーブルを変更する最初のマイグレーションで初めて表面化する。**
-
-実際にそうなった。最初のデプロイで Flyway が `postgres` として走り、
-V1〜V9 のテーブルは全部 postgres 所有になった。その後 Flyway の接続を
-`kaden_migrator` に切り替えたが、所有権は移らないまま残り、
-既存テーブルを `alter` する V10 で止まった。
-
-一度だけ superuser で流す:
-
-```bash
-railway ssh -s Postgres 'psql -U postgres -d railway' < db/transfer-ownership.sql
-```
-
-> **テストを superuser で走らせている限り、この種の失敗は必ず本番で初めて見つかる。**
-> superuser は所有権の検査を素通りするため。`AbstractIntegrationTest` は
-> Flyway を `kaden_migrator` で流し、`SchemaOwnershipTest` が
-> 「テーブルの所有者が migrator であること」を固定している。
-> ここを superuser に戻すと、その 2 件が落ちる。
-
-> **GRANT は権限が足りなくてもエラーにならない。**
-> 所有者でないロールが `grant usage on schema public` を実行すると、
-> PostgreSQL は ERROR ではなく WARNING を出し、権限は付与されないまま通る。
-> 「マイグレーションは成功したのに権限が無い」が起こりうるので、
-> スキーマの所有権も `kaden_migrator` に渡しておく。
-
-### password authentication failed for user "kaden_app" / "kaden_migrator"
-
-DB 側のロードのパスワードと、各サービスの `DATABASE_URL` が食い違っている。
-**資格情報は 2 か所（DB のロード と 各サービスの環境変数）にあり、
-片方だけ変えるとこうなる。** 実際にこれで全サービスが起動不能になった。
-
-紛らわしいのは、**すでに起動しているサービスはしばらく生き残る**こと。
-asyncpg / HikariCP はプールを保持しているので `/healthz` は 200 を返し続ける。
-壊れるのは「再起動したとき」と「プールを広げようとしたとき」なので、
-一部だけ落ちているように見える。実際には全部が壊れている。
-
-復旧は、DB と全サービスを**同時に**そろえる:
-
-```bash
-railway connect Postgres
-```
-```sql
-alter role kaden_app      password '...';
-alter role kaden_migrator password '...';
-```
-
-```bash
-# api は両方、voice の 3 つは DATABASE_URL だけ
-railway variables -s KadenSaas   --set "DATABASE_URL=postgresql://kaden_app:PW1@postgres.railway.internal:5432/railway"   --set "DATABASE_MIGRATOR_URL=postgresql://kaden_migrator:PW2@postgres.railway.internal:5432/railway"
-```
-
-> **パスワードは 16 進など URL に安全な文字にする**（`openssl rand -hex 24`）。
-> `@` `/` `#` `?` が入ると DSN の区切りとして解釈され、
-> 「パスワードが違う」ではなく「ホストが見つからない」など別の症状で出る。
-
-再発を防ぐには、`DATABASE_URL` を 1 か所に集約して参照させる:
-
-```bash
-railway variables -s voice-jobs --set 'DATABASE_URL=${{KadenSaas.DATABASE_URL}}'
-```
-
-> **参照へ切り替えるのは、パスワードを直した後にすること。**
-> 変数を変えると再デプロイが走る。壊れた値のまま切り替えると、
-> 古いプールで生き残っていたサービスまで落ちる。
-
-なお `DATABASE_MIGRATOR_URL` は api しか使わない。voice の 3 サービスにも
-設定されているが不要で、しかも `kaden_migrator` は BYPASSRLS を持つ。
-使わないサービスに RLS を素通りできる資格情報を置かない。
-
-## 症状から引く
-
-| 症状 | 見るところ |
-| --- | --- |
-| Webhook が全件 403 | `PUBLIC_BASE_URL` と Twilio Console の URL。末尾のスラッシュだけでもずれる。[`signature.py`](voice/app/telephony/signature.py) |
-| 一覧が空。DB にはデータがある | **トランザクションの外で DB に触っている。** 上の「トランザクションと RLS」 |
-| ログインが必ず失敗する | 同上。テナントを設定する前にトランザクションが始まっている |
-| 同じ通話が 2 行に増える | `provider_call_sid` の unique と upsert |
-| 同じ相手に 2 回かかる | `call_sessions_inflight_uniq`（部分ユニーク）。関門の事前チェックは競合に弱く、砦は DB 側 |
-| 通話の状態が巻き戻る | 更新に `dial_state_rank <` を付けているか |
-| API が通話中だけ遅い | `voice-media` を別サービスで動かしているか（原則 3） |
-| 断った相手に再架電した | 関門を通らない発信経路。`sh scripts/check-boundaries.sh` |
-| コールリストが少しずつ枯れる | 予約の期限切れ解放ジョブが動いているか |
-| 「N 件の問題があります」で起動しない | 必須の環境変数が未設定。**意図した挙動** |
-| Flyway が `permission denied for schema public` | PostgreSQL 15+。スキーマへの CREATE 権限が要る |
-| `create extension` で `permission denied` | superuser が要る拡張を使っている。この構成では pgcrypto は不要（`gen_random_uuid()` はコアにある） |
-
----
-
-## 法令について
-
-このリポジトリは法的判断を代替しない。実サービス化の前に、対象地域・業種について
-専門家または担当部門の確認を行うこと。特に次を確認する。
-
-個人情報・プライバシー / 通話録音の告知と同意 / 営業電話・勧誘の規制 /
-オプトアウトと Do Not Call / 発信者番号 / 電気通信関連制度 /
-AI による自動応答・自動発信 / データの保存地域 / 外部の AI・音声 API への
-データ送信。
-
-仕組みで担保しているのは「架電時間帯」「曜日」「祝日」「再勧誘拒否」「回数上限」
-「録音の保存期限」までで、これらの設定値が法令に対して妥当かどうかは判断していない。
-
----
-
-## 未実装
-
-- CRM（Salesforce / HubSpot）連携の Adapter 実体。テーブルと outbox は用意済み
-- Stripe の決済処理。プラン・サブスクリプション・従量集計のテーブルは用意済み
-- CSV 一括取込
-- 自動発信（プログレッシブ / プレディクティブ）
-- 通話の文字起こし・AI 要約の画面表示（パイプラインと格納先は用意済み）
