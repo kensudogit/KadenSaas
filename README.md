@@ -1,5 +1,9 @@
 # 架電特化型SaaS
 
+> **Domain SaaS / AI Calling Platform** — 発信制御、音声、録音、文字起こし、AI要約、再架電、KPIを統合するマルチテナント架電SaaSです。
+>
+> **Stack:** Java · Spring Boot · Python · FastAPI · Next.js · PostgreSQL · Redis · Twilio
+
 アウトバウンドコール業務（テレアポ・督促・契約更新フォロー）の基盤。
 顧客リスト → 発信 → 通話 → 録音 → 文字起こし → AI要約 → 架電結果 → 再架電 → KPI
 を一元化する。
