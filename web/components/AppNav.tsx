@@ -18,6 +18,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { clearToken, getRole, type Role } from "@/lib/api";
+import BrandLogo from "@/components/BrandLogo";
 
 type Item = {
   href: string;
@@ -68,9 +69,22 @@ export default function AppNav() {
           flexWrap: "wrap",
         }}
       >
-        <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.2 }}>
+        <a
+          href="/dashboard"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "inherit",
+            textDecoration: "none",
+            fontWeight: 700,
+            fontSize: 15,
+            letterSpacing: 0.2,
+          }}
+        >
+          <BrandLogo size={32} />
           架電 SaaS
-        </span>
+        </a>
 
         <nav style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           {visible.map((item) => {

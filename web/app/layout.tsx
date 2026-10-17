@@ -6,6 +6,10 @@ import AppNav from "@/components/AppNav";
 export const metadata: Metadata = {
   title: "架電SaaS",
   description: "アウトバウンドコール業務の基盤",
+  icons: {
+    icon: [{ url: "/PC.png", type: "image/png" }],
+    apple: "/PC.png",
+  },
 };
 
 export default function RootLayout({

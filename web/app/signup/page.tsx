@@ -19,6 +19,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import BrandLogo from "@/components/BrandLogo";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
@@ -83,7 +84,10 @@ export default function SignupPage() {
   if (enabled === false) {
     return (
       <main style={{ maxWidth: 420, margin: "14vh auto", padding: "0 20px" }}>
-        <h1 style={{ fontSize: 20 }}>組織の登録</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <BrandLogo size={40} />
+          <h1 style={{ fontSize: 20, margin: 0 }}>組織の登録</h1>
+        </div>
         <p style={{ color: "var(--muted)", fontSize: 14 }}>
           現在、新規登録は受け付けていません。管理者にお問い合わせください。
         </p>
@@ -120,7 +124,10 @@ export default function SignupPage() {
 
   return (
     <main style={{ maxWidth: 420, margin: "8vh auto", padding: "0 20px 40px" }}>
-      <h1 style={{ fontSize: 22, marginBottom: 4 }}>組織の登録</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+        <BrandLogo size={56} priority />
+        <h1 style={{ fontSize: 22, margin: 0 }}>組織の登録</h1>
+      </div>
       <p style={{ color: "var(--muted)", marginTop: 0, fontSize: 14 }}>
         組織と、最初の管理者アカウントを作ります。
       </p>

@@ -16,6 +16,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/api";
+import BrandLogo from "@/components/BrandLogo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -47,7 +48,10 @@ export default function LoginPage() {
         padding: "0 20px",
       }}
     >
-      <h1 style={{ fontSize: 22, marginBottom: 4 }}>架電SaaS</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+        <BrandLogo size={56} priority />
+        <h1 style={{ fontSize: 22, margin: 0 }}>架電SaaS</h1>
+      </div>
       <p style={{ color: "var(--muted)", marginTop: 0, fontSize: 14 }}>
         テナントの識別子と、担当者のアカウントでログインします
       </p>

@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import BrandLogo from "@/components/BrandLogo";
 
 const POS_KEY = "kaden.guide.pos";
 const OPEN_KEY = "kaden.guide.open";
@@ -197,7 +198,10 @@ export default function GuidePalette() {
           }}
         >
           <Card>
-            <Label>KADEN SAAS · 架電特化型SaaS</Label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <BrandLogo size={28} />
+              <Label>KADEN SAAS · 架電特化型SaaS</Label>
+            </div>
             <h3 style={{ margin: "6px 0 6px", fontSize: 17 }}>
               発信から KPI までを一本の線で扱う
             </h3>
