@@ -58,4 +58,10 @@ public class CallCenterController {
             "trainingUse", false,
             "note", "inbound_assist_not_outbound_dialer");
     }
+
+    /** FAQ と受付履歴のデモ。発信しない。オペレーターでも画面確認できるようにする。 */
+    @PostMapping("/seed-demo")
+    public CallCenterAssistService.DemoSeedResult seedDemo() {
+        return assist.seedDemoIfEmpty(CurrentUser.require());
+    }
 }

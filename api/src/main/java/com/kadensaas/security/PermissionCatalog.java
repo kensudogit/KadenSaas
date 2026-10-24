@@ -109,6 +109,10 @@ public final class PermissionCatalog {
             "OpenAI 設定の有無など。鍵そのものは返さない",
             EVERYONE, "GET", "/api/v1/call-center/status"),
 
+        new Capability("callcenter.seed_demo", "着信デモ用 FAQ を入れる",
+            "FAQ が無いテナント向け。架電データは増やさない",
+            EVERYONE, "POST", "/api/v1/call-center/seed-demo"),
+
         new Capability("callcenter.inquiries", "着信受付履歴を見る",
             "オペレーター支援の受付履歴。音声は学習に使わない",
             EVERYONE, "GET", "/api/v1/call-center/inquiries"),

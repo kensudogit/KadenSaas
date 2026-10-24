@@ -82,6 +82,8 @@ public class CallCenterAssistService {
         }
 
         IntentClassifier.Result nlp = IntentClassifier.classify(transcript);
+        // ★ Railway 等で FAQ 未投入のテナントでも、初回から回答案が試せるようにする
+        KnowledgeCatalog.seedIfEmpty(jdbc, user.tenantId());
         List<Hit> hits = search(transcript, nlp.intent());
         Draft draft = buildReply(transcript, nlp.intent(), hits);
         String reply = draft.reply();

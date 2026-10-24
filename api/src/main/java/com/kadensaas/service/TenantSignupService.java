@@ -7,6 +7,7 @@ import com.kadensaas.domain.Tenant;
 import com.kadensaas.domain.UserAccount;
 import com.kadensaas.repository.TenantRepository;
 import com.kadensaas.repository.UserAccountRepository;
+import com.kadensaas.service.callcenter.CallCenterAssistService;
 import com.kadensaas.tenant.TenantContext;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -69,13 +70,16 @@ public class TenantSignupService {
     private final TenantRepository tenants;
     private final TenantProvisioning provisioning;
     private final PasswordEncoder encoder;
+    private final CallCenterAssistService callCenter;
 
     public TenantSignupService(TenantRepository tenants,
                                TenantProvisioning provisioning,
-                               PasswordEncoder encoder) {
+                               PasswordEncoder encoder,
+                               CallCenterAssistService callCenter) {
         this.tenants = tenants;
         this.provisioning = provisioning;
         this.encoder = encoder;
+        this.callCenter = callCenter;
     }
 
     public Result signup(String tenantName, String slug, String email,
@@ -116,6 +120,8 @@ public class TenantSignupService {
             UUID userId = provisioning.createAdminUser(
                 tenantId, normalizedEmail, encoder.encode(password),
                 displayName == null || displayName.isBlank() ? "管理者" : displayName.trim());
+
+            callCenter.seedKnowledge(tenantId);
 
             return new Result(tenantId, normalizedSlug, userId, normalizedEmail);
 

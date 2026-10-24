@@ -405,6 +405,11 @@ export const callCenter = {
       method: "DELETE",
     }),
   knowledge: () => api<KnowledgeArticle[]>("/api/v1/call-center/knowledge"),
+  seedDemo: () =>
+    api<{
+      knowledgeArticlesAdded: number;
+      demoInquiriesAdded: number;
+    }>("/api/v1/call-center/seed-demo", { method: "POST" }),
 };
 
 export const dnc = {

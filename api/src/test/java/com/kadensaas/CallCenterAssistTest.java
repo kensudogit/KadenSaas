@@ -99,6 +99,19 @@ class CallCenterAssistTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("FAQ が無いテナントでも回答案を作るとデモ FAQ が入り RAG する")
+    void assistAutoSeedsKnowledge() {
+        UUID tenantId = createTenant("cc-auto", "自動FAQ社");
+        UUID userId = createUser(tenantId, "auto@example.com", "operator");
+        TenantContext.set(tenantId);
+        var user = new AuthUser(userId, tenantId, "auto@example.com", AuthUser.Role.OPERATOR);
+        var result = assist.assist(user, "請求書が届きません。再発行できますか。", null);
+        assertThat(result.hits()).isNotEmpty();
+        assertThat(result.intent()).isEqualTo("billing");
+        assertThat(assist.listKnowledge()).hasSize(5);
+    }
+
+    @Test
     @DisplayName("FAQ シードはテナント単位で空のときだけ入る")
     void seedKnowledgeIsPerTenant() {
         UUID a = createTenant("cc-seed-a", "FAQ A");
