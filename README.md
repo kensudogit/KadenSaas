@@ -502,7 +502,8 @@ Twilio の webhook は順不同で届き、再送もある。素直に代入す�
 | API | `POST /api/v1/call-center/assist` / `GET .../knowledge` / `GET .../inquiries` / `DELETE .../inquiries/{id}` |
 | DB | `V16__call_center_inbound.sql`（`knowledge_*`, `inbound_inquiries`、RLS 付き） |
 
-ヒットしたチャンク ID だけ引用する。該当が無いときは「出典の無い案内は作らない」と返す。
+ヒットしたチャンク ID だけ引用する。該当が無いときは OpenAI を呼ばず「出典の無い案内は作らない」と返す。
+`OPENAI_API_KEY` 設定時は、ヒットした FAQ だけをコンテキストに OpenAI が回答案を生成する（`gpt-4o-mini` 既定、未設定時はテンプレート）。
 実音声認識・ベクトル RAG・WER／検索精度は未接続／未計測。音声は学習に使わない。
 
 `CallCenterAssistTest` が「回答案を作っても `call_sessions` が増えない」ことと、

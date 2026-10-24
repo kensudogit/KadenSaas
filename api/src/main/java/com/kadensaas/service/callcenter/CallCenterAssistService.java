@@ -56,10 +56,19 @@ public class CallCenterAssistService {
 
     private final JdbcTemplate jdbc;
     private final AuditService audit;
+    private final CallCenterOpenAiClient openAi;
 
-    public CallCenterAssistService(JdbcTemplate jdbc, AuditService audit) {
+    public CallCenterAssistService(
+            JdbcTemplate jdbc,
+            AuditService audit,
+            CallCenterOpenAiClient openAi) {
         this.jdbc = jdbc;
         this.audit = audit;
+        this.openAi = openAi;
+    }
+
+    public boolean openAiConfigured() {
+        return openAi.configured();
     }
 
     @Transactional
@@ -74,7 +83,8 @@ public class CallCenterAssistService {
 
         IntentClassifier.Result nlp = IntentClassifier.classify(transcript);
         List<Hit> hits = search(transcript, nlp.intent());
-        String reply = draft(nlp.intent(), hits);
+        Draft draft = buildReply(transcript, nlp.intent(), hits);
+        String reply = draft.reply();
         String sources = hits.stream()
             .map(hit -> "\"" + hit.chunkId() + "\"")
             .collect(java.util.stream.Collectors.joining(",", "[", "]"));
@@ -103,7 +113,40 @@ public class CallCenterAssistService {
             hits,
             reply,
             false,
-            "demo_lexical_rag_not_measured_accuracy");
+            draft.note());
+    }
+
+    private record Draft(String reply, String note) {
+    }
+
+    private Draft buildReply(String transcript, String intent, List<Hit> hits) {
+        if (hits.isEmpty()) {
+            return new Draft(
+                draftTemplate(intent, hits),
+                "lexical_rag_no_hits");
+        }
+        if (openAi.configured()) {
+            return openAi.compose(transcript, intent, hits)
+                .map(text -> new Draft(
+                    ensureCitation(text, hits),
+                    "openai_rag_assist_not_measured_accuracy"))
+                .orElseGet(() -> new Draft(
+                    draftTemplate(intent, hits),
+                    "openai_failed_lexical_fallback"));
+        }
+        return new Draft(
+            draftTemplate(intent, hits),
+            "lexical_rag_not_measured_accuracy");
+    }
+
+    private static String ensureCitation(String reply, List<Hit> hits) {
+        String cited = hits.stream()
+            .map(hit -> "#" + hit.chunkId())
+            .collect(java.util.stream.Collectors.joining(" / "));
+        if (reply.contains("出典")) {
+            return reply;
+        }
+        return "出典 " + cited + "\n" + reply;
     }
 
     @Transactional(readOnly = true)
@@ -215,13 +258,13 @@ public class CallCenterAssistService {
         return ranked.size() > 3 ? ranked.subList(0, 3) : ranked;
     }
 
-    private static String draft(String intent, List<Hit> hits) {
+    private static String draftTemplate(String intent, List<Hit> hits) {
         if (hits.isEmpty()) {
-            return "[デモ回答] 意図は " + intent + " ですが、ナレッジに該当がありません。"
+            return "[回答案] 意図は " + intent + " ですが、ナレッジに該当がありません。"
                 + " 出典の無い案内は作りません。";
         }
         String cited = String.join(" / ", hits.stream().map(hit -> "#" + hit.chunkId()).toList());
-        return "[デモ回答] 意図 " + intent + "。出典 " + cited + "。" + hits.get(0).content()
+        return "[回答案] 意図 " + intent + "。出典 " + cited + "。" + hits.get(0).content()
             + " これは生成だけで作ったFAQではありません。";
     }
 }

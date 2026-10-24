@@ -362,8 +362,9 @@ export default function GuidePalette() {
                 </>,
                 <>
                   <b>2. 問い合わせを試す</b> — 例:「請求書が届きません。再発行できますか。」
-                  →「回答案を作る」。意図 <Code inline>billing</Code>、出典にチャンク ID、
-                  回答案に FAQ 本文が付きます
+                  →「回答案を作る」。意図 <Code inline>billing</Code>、出典にチャンク ID。
+                  <Code inline>OPENAI_API_KEY</Code> があるときは OpenAI が FAQ 範囲内で
+                  オペレーター向け回答案を書きます（未設定時はテンプレート）
                 </>,
                 <>
                   <b>3. 該当なし</b> — ナレッジに無い文言は「出典の無い案内は作りません」と返します。

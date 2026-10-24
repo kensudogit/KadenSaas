@@ -105,6 +105,10 @@ public final class PermissionCatalog {
             "回答案の出典になる FAQ。テナントごとに分かれる",
             EVERYONE, "GET", "/api/v1/call-center/knowledge"),
 
+        new Capability("callcenter.status", "着信支援の接続状態を見る",
+            "OpenAI 設定の有無など。鍵そのものは返さない",
+            EVERYONE, "GET", "/api/v1/call-center/status"),
+
         new Capability("callcenter.inquiries", "着信受付履歴を見る",
             "オペレーター支援の受付履歴。音声は学習に使わない",
             EVERYONE, "GET", "/api/v1/call-center/inquiries"),

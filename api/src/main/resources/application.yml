@@ -76,6 +76,10 @@ kaden:
   # ★ 発信は voice サービスにしか投げない。ここから Twilio を直接叩かない
   voice:
     base-url: ${VOICE_BASE_URL:http://localhost:8001}
+  call-center:
+    # ★ 設定時のみ「回答案を作る」が OpenAI を使う。未設定時はテンプレート回答
+    openai-api-key: ${OPENAI_API_KEY:}
+    openai-model: ${KADEN_CALLCENTER_OPENAI_MODEL:gpt-4o-mini}
   billing:
     stripe-secret-key: ${STRIPE_SECRET_KEY:}
     stripe-webhook-secret: ${STRIPE_WEBHOOK_SECRET:}

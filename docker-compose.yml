@@ -78,6 +78,8 @@ services:
       CORS_ORIGIN: http://localhost:3000,http://localhost:3002
       # ★ ローカル検証用。未設定なら登録の口ごと無効になる
       KADEN_SIGNUP_TOKEN: local-signup-token-for-testing
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      KADEN_CALLCENTER_OPENAI_MODEL: ${KADEN_CALLCENTER_OPENAI_MODEL:-gpt-4o-mini}
     ports:
       - "8080:8080"
     depends_on:

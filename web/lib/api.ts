@@ -386,7 +386,14 @@ export interface KnowledgeArticle {
   intent: string;
 }
 
+export interface CallCenterStatus {
+  openaiConfigured: boolean;
+  trainingUse: boolean;
+  note: string;
+}
+
 export const callCenter = {
+  status: () => api<CallCenterStatus>("/api/v1/call-center/status"),
   assist: (text: string) =>
     api<AssistResult>("/api/v1/call-center/assist", {
       method: "POST",

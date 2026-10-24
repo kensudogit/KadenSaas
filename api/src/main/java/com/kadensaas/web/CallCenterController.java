@@ -50,4 +50,12 @@ public class CallCenterController {
     public List<CallCenterAssistService.ArticleRow> knowledge() {
         return assist.listKnowledge();
     }
+
+    @GetMapping("/status")
+    public Map<String, Object> status() {
+        return Map.of(
+            "openaiConfigured", assist.openAiConfigured(),
+            "trainingUse", false,
+            "note", "inbound_assist_not_outbound_dialer");
+    }
 }

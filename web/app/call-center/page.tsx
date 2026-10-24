@@ -36,6 +36,7 @@ export default function CallCenterPage() {
   const [role, setRole] = useState<Role | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [openAiOn, setOpenAiOn] = useState(false);
 
   async function loadSide() {
     try {
@@ -60,6 +61,10 @@ export default function CallCenterPage() {
     }
     setRole(getRole());
     loadSide();
+    callCenter
+      .status()
+      .then((s) => setOpenAiOn(s.openaiConfigured))
+      .catch(() => undefined);
   }, []);
 
   async function seedCallCenterDemo() {
@@ -101,6 +106,9 @@ export default function CallCenterPage() {
       <h1 style={{ fontSize: 20, margin: "0 0 4px" }}>コールセンター</h1>
       <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 0 }}>
         着信の文言から意図・ナレッジ出典・回答案を出します。ここから発信はしません。
+        {openAiOn
+          ? " OPENAI_API_KEY 設定時は、ヒットした FAQ だけを根拠に OpenAI が回答案を作成します。"
+          : " OpenAI 未設定時はテンプレート回答です。"}
         精度は未計測です。音声は学習に使いません。
       </p>
 
@@ -161,6 +169,9 @@ export default function CallCenterPage() {
         <pre style={{ ...box, whiteSpace: "pre-wrap" }}>
           {result?.reply ?? "まだありません"}
         </pre>
+        {result?.note && (
+          <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{result.note}</p>
+        )}
       </section>
 
       <section style={{ marginBottom: 28 }}>

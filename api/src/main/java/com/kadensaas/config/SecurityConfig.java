@@ -56,6 +56,9 @@ public class SecurityConfig {
                 //   この行は /api/v1/admin/** より前に置く（先勝ち）
                 .requestMatchers(HttpMethod.GET, "/api/v1/admin/telephony/diagnose")
                     .hasAnyRole("MANAGER", "ADMIN")
+                // ★ 着信デモ用 FAQ のみ。架電データを混ぜない確認用なので manager にも開ける
+                .requestMatchers(HttpMethod.POST, "/api/v1/admin/sample-data/call-center")
+                    .hasAnyRole("MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
             // ★ 認証されていないときは 401、権限が足りないときは 403 を返す。
