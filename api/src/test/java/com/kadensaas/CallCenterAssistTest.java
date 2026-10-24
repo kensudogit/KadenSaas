@@ -99,6 +99,25 @@ class CallCenterAssistTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("語彙が重ならなくても請求意図なら billing ナレッジを参照できる")
+    void intentAlignedWhenLexicalMisses() {
+        String token = readyTenant("cc-align", "着信整合社");
+
+        var response = mvc.perform(post("/api/v1/call-center/assist")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"text\":\"支払いの明細が欲しいです。\"}"))
+            .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        JsonNode body = json.readTree(response.getContentAsString());
+        assertThat(body.get("intent").asText()).isEqualTo("billing");
+        assertThat(body.get("hits").isEmpty()).isFalse();
+        assertThat(body.get("hits").get(0).get("intent").asText()).isEqualTo("billing");
+        assertThat(body.get("note").asText()).contains("intent_aligned");
+    }
+
+    @Test
     @DisplayName("FAQ が無いテナントでも回答案を作るとデモ FAQ が入り RAG する")
     void assistAutoSeedsKnowledge() {
         UUID tenantId = createTenant("cc-auto", "自動FAQ社");

@@ -3,6 +3,7 @@ package com.kadensaas.service.callcenter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +37,7 @@ public class CallCenterAssistService {
         IntentClassifier.Result nlp,
         List<Hit> hits,
         String reply,
+        List<String> operatorChecklist,
         boolean trainingUse,
         String note
     ) {
@@ -71,6 +73,10 @@ public class CallCenterAssistService {
         return openAi.configured();
     }
 
+    public String openAiModelName() {
+        return openAi.modelName();
+    }
+
     @Transactional
     public AssistResult assist(AuthUser user, String text, UUID customerId) {
         String transcript = text == null ? "" : text.trim();
@@ -81,11 +87,26 @@ public class CallCenterAssistService {
             throw new IllegalArgumentException("問い合わせ本文が長すぎます");
         }
 
-        IntentClassifier.Result nlp = IntentClassifier.classify(transcript);
+        IntentClassifier.Result keywordNlp = IntentClassifier.classify(transcript);
+        IntentClassifier.Result nlp = refineNlp(transcript, keywordNlp);
         // ★ Railway 等で FAQ 未投入のテナントでも、初回から回答案が試せるようにする
         KnowledgeCatalog.seedIfEmpty(jdbc, user.tenantId());
         List<Hit> hits = search(transcript, nlp.intent());
-        Draft draft = buildReply(transcript, nlp.intent(), hits);
+        String ragNote = null;
+        if (hits.isEmpty()) {
+            hits = intentAlignedHits(nlp.intent(), keywordNlp.score());
+            if (!hits.isEmpty()) {
+                ragNote = "intent_aligned_rag_not_measured_accuracy";
+            }
+        }
+        if (hits.isEmpty() && openAi.configured()) {
+            var selected = openAiSelectHits(transcript, nlp.intent());
+            if (!selected.isEmpty()) {
+                hits = selected;
+                ragNote = "openai_chunk_select_not_measured_accuracy";
+            }
+        }
+        Draft draft = buildReply(transcript, nlp.intent(), hits, ragNote);
         String reply = draft.reply();
         String sources = hits.stream()
             .map(hit -> "\"" + hit.chunkId() + "\"")
@@ -114,31 +135,107 @@ public class CallCenterAssistService {
             nlp,
             hits,
             reply,
+            draft.operatorChecklist(),
             false,
             draft.note());
     }
 
-    private record Draft(String reply, String note) {
+    private record Draft(String reply, String note, List<String> operatorChecklist) {
     }
 
-    private Draft buildReply(String transcript, String intent, List<Hit> hits) {
+    private IntentClassifier.Result refineNlp(String transcript, IntentClassifier.Result keyword) {
+        if (!openAi.configured()) {
+            return keyword;
+        }
+        if (!"general".equals(keyword.intent()) && keyword.score() >= 2) {
+            return keyword;
+        }
+        return openAi.refineIntent(transcript).orElse(keyword);
+    }
+
+    private List<Hit> intentAlignedHits(String intent, double keywordScore) {
+        if (keywordScore < 1 || intent == null || "general".equals(intent)) {
+            return List.of();
+        }
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+            select id, article_id, content, intent from knowledge_chunks
+             where intent = ?
+             order by id
+             limit 3
+            """, intent);
+        List<Hit> hits = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            hits.add(new Hit(
+                (UUID) row.get("id"),
+                (UUID) row.get("article_id"),
+                String.valueOf(row.get("content")),
+                String.valueOf(row.get("intent")),
+                1));
+        }
+        return hits;
+    }
+
+    private List<Hit> openAiSelectHits(String transcript, String intent) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+            select id, article_id, content, intent from knowledge_chunks
+             order by intent, id
+             limit 48
+            """);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<CallCenterOpenAiClient.RagCandidate> candidates = new ArrayList<>();
+        Map<UUID, Map<String, Object>> byId = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            UUID id = (UUID) row.get("id");
+            String content = String.valueOf(row.get("content"));
+            String excerpt = content.length() > 220 ? content.substring(0, 220) + "…" : content;
+            candidates.add(new CallCenterOpenAiClient.RagCandidate(
+                id,
+                String.valueOf(row.get("intent")),
+                excerpt));
+            byId.put(id, row);
+        }
+        List<UUID> picked = openAi.selectChunkIds(transcript, intent, candidates);
+        List<Hit> hits = new ArrayList<>();
+        for (UUID id : picked) {
+            Map<String, Object> row = byId.get(id);
+            if (row == null) {
+                continue;
+            }
+            hits.add(new Hit(
+                id,
+                (UUID) row.get("article_id"),
+                String.valueOf(row.get("content")),
+                String.valueOf(row.get("intent")),
+                2));
+        }
+        return hits;
+    }
+
+    private Draft buildReply(String transcript, String intent, List<Hit> hits, String ragNote) {
         if (hits.isEmpty()) {
             return new Draft(
                 draftTemplate(intent, hits),
-                "lexical_rag_no_hits");
+                "lexical_rag_no_hits",
+                List.of());
         }
+        String retrievalNote = ragNote != null ? ragNote : "lexical_rag_not_measured_accuracy";
         if (openAi.configured()) {
             return openAi.compose(transcript, intent, hits)
-                .map(text -> new Draft(
-                    ensureCitation(text, hits),
-                    "openai_rag_assist_not_measured_accuracy"))
+                .map(result -> new Draft(
+                    ensureCitation(result.reply(), hits),
+                    "openai_rag_assist_not_measured_accuracy",
+                    result.operatorChecklist()))
                 .orElseGet(() -> new Draft(
                     draftTemplate(intent, hits),
-                    "openai_failed_lexical_fallback"));
+                    "openai_failed_" + retrievalNote,
+                    List.of()));
         }
         return new Draft(
             draftTemplate(intent, hits),
-            "lexical_rag_not_measured_accuracy");
+            retrievalNote,
+            List.of());
     }
 
     private static String ensureCitation(String reply, List<Hit> hits) {

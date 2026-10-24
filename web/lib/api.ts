@@ -366,6 +366,7 @@ export interface AssistResult {
   nlp: { intent: string; score: number; provider: string; note: string };
   hits: AssistHit[];
   reply: string;
+  operatorChecklist: string[];
   trainingUse: boolean;
   note: string;
 }
@@ -388,6 +389,7 @@ export interface KnowledgeArticle {
 
 export interface CallCenterStatus {
   openaiConfigured: boolean;
+  openAiModel: string;
   trainingUse: boolean;
   note: string;
 }

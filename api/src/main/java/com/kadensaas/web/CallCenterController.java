@@ -55,6 +55,7 @@ public class CallCenterController {
     public Map<String, Object> status() {
         return Map.of(
             "openaiConfigured", assist.openAiConfigured(),
+            "openAiModel", assist.openAiModelName(),
             "trainingUse", false,
             "note", "inbound_assist_not_outbound_dialer");
     }

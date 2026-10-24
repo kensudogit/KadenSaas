@@ -33,6 +33,7 @@ export default function CallCenterPage() {
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
   const [openAiOn, setOpenAiOn] = useState(false);
+  const [openAiModel, setOpenAiModel] = useState("");
 
   async function loadSide() {
     try {
@@ -58,7 +59,10 @@ export default function CallCenterPage() {
     loadSide();
     callCenter
       .status()
-      .then((s) => setOpenAiOn(s.openaiConfigured))
+      .then((s) => {
+        setOpenAiOn(s.openaiConfigured);
+        setOpenAiModel(s.openAiModel ?? "");
+      })
       .catch(() => undefined);
   }, []);
 
@@ -106,8 +110,8 @@ export default function CallCenterPage() {
       <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 0 }}>
         着信の文言から意図・ナレッジ出典・回答案を出します。ここから発信はしません。
         {openAiOn
-          ? " OPENAI_API_KEY 設定時は、ヒットした FAQ だけを根拠に OpenAI が回答案を作成します。"
-          : " OpenAI 未設定時はテンプレート回答です。"}
+          ? ` OPENAI_API_KEY 設定時（${openAiModel || "gpt-4o-mini"}）は、FAQ 出典のみを根拠に回答案・確認項目を生成します。語彙が合わないときは意図整合または AI チャンク選定を試します。`
+          : " OpenAI 未設定時は語彙 RAG とテンプレート回答です。請求・配送など意図がはっきりしていれば語彙不一致でも FAQ を参照できます。"}
         精度は未計測です。音声は学習に使いません。
       </p>
 
@@ -155,7 +159,11 @@ export default function CallCenterPage() {
 
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 16 }}>意図</h2>
-        <pre style={box}>{result ? `${result.intent}（${result.nlp.note}）` : "まだありません"}</pre>
+        <pre style={box}>
+          {result
+            ? `${result.intent}（${result.nlp.provider} / ${result.nlp.note}）`
+            : "まだありません"}
+        </pre>
         <h2 style={{ fontSize: 16 }}>出典</h2>
         <pre style={box}>
           {result
@@ -168,6 +176,18 @@ export default function CallCenterPage() {
         <pre style={{ ...box, whiteSpace: "pre-wrap" }}>
           {result?.reply ?? "まだありません"}
         </pre>
+        {result?.operatorChecklist?.length ? (
+          <>
+            <h2 style={{ fontSize: 16 }}>通話中の確認項目</h2>
+            <ul style={{ margin: "0 0 12px", paddingLeft: 20 }}>
+              {result.operatorChecklist.map((item) => (
+                <li key={item} style={{ marginBottom: 4 }}>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
         {result?.note && (
           <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{result.note}</p>
         )}
