@@ -280,8 +280,17 @@ export const admin = {
       callSessions: number;
       dncEntries: number;
       callbacks: number;
+      callCenterKnowledge: number;
+      callCenterInquiries: number;
       message: string;
     }>(`/api/v1/admin/sample-data?force=${force}`, { method: "POST" }),
+
+  seedCallCenterSample: () =>
+    api<{
+      knowledgeArticlesAdded: number;
+      demoInquiriesAdded: number;
+      message: string;
+    }>("/api/v1/admin/sample-data/call-center", { method: "POST" }),
 
   clearData: () =>
     api<{ ok: boolean; message: string }>(

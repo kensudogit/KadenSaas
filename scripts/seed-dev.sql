@@ -44,6 +44,9 @@ values
   ('aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111',
    'manager@demo.example', :pw, '管理 花子', 'manager'),
+  ('aaaaaaaa-0000-0000-0000-000000000003',
+   '11111111-1111-1111-1111-111111111111',
+   'admin@demo.example', :pw, 'システム 管理者', 'admin'),
   ('bbbbbbbb-0000-0000-0000-000000000001',
    '22222222-2222-2222-2222-222222222222',
    'operator@other.example', :pw, '別社 次郎', 'operator')
@@ -156,6 +159,35 @@ select tenant_id, id, title || '。' || body, intent
      select 1 from knowledge_chunks c
       where c.article_id = knowledge_articles.id
    );
+
+-- コールセンター画面の受付履歴（着信デモ。発信行は増やさない）
+insert into inbound_inquiries
+  (tenant_id, operator_id, transcript, intent, reply, sources)
+select
+  '11111111-1111-1111-1111-111111111111',
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  v.transcript,
+  v.intent,
+  v.reply,
+  v.sources::jsonb
+from (values
+  (
+    '請求書が届きません。再発行できますか。',
+    'billing',
+    '[デモ回答] 意図 billing。出典付きの請求 FAQ を参照してください。 これは生成だけで作ったFAQではありません。',
+    '[]'
+  ),
+  (
+    '発送から1週間経ちますが、商品がまだ届きません。',
+    'shipping',
+    '[デモ回答] 意図 shipping。配送ナレッジを参照してください。 これは生成だけで作ったFAQではありません。',
+    '[]'
+  )
+) as v(transcript, intent, reply, sources)
+where not exists (
+  select 1 from inbound_inquiries i
+   where i.tenant_id = '11111111-1111-1111-1111-111111111111'
+);
 
 \echo '★ 株式会社チャーリー（03-1234-0003）は DNC に入れてあります。'
 \echo '  発信しようとすると関門が止めます。それが正常な動作です。'

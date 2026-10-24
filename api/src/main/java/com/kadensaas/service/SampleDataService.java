@@ -34,7 +34,8 @@ public class SampleDataService {
 
     /** 投入結果。画面にそのまま出せる形にする。 */
     public record Summary(int customers, int campaigns, int callTargets,
-                          int callSessions, int dncEntries, int callbacks) {
+                          int callSessions, int dncEntries, int callbacks,
+                          int callCenterKnowledge, int callCenterInquiries) {
     }
 
     private static final String[][] COMPANIES = {
@@ -84,8 +85,8 @@ public class SampleDataService {
             on conflict (tenant_id) do nothing
             """, tenantId, "+81300000000");
 
-        // ★ 着信画面の出典。発信はしない
-        callCenter.seedKnowledge(tenantId);
+        // ★ 着信画面の出典と受付履歴。発信はしない
+        var callCenterSeed = callCenter.seedDemoIfEmpty(user);
 
         UUID campaignId = UUID.randomUUID();
         jdbc.update("""
@@ -150,7 +151,22 @@ public class SampleDataService {
         //   記録が事実と食い違う
         audit.record(user, "admin.sample_data_generated", "tenant", tenantId);
 
-        return new Summary(customers, 1, targets, sessions, dnc, callbacks);
+        return new Summary(
+            customers,
+            1,
+            targets,
+            sessions,
+            dnc,
+            callbacks,
+            callCenterSeed.knowledgeArticlesAdded(),
+            callCenterSeed.demoInquiriesAdded());
+    }
+
+    /** 架電データとは別に、コールセンター画面だけ確認したいとき用。 */
+    @Transactional
+    public CallCenterAssistService.DemoSeedResult seedCallCenterDemo(AuthUser user) {
+        audit.record(user, "admin.call_center_sample_seeded", "tenant", user.tenantId());
+        return callCenter.seedDemoIfEmpty(user);
     }
 
     /**

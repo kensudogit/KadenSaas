@@ -139,8 +139,9 @@ export default function DashboardPage() {
             通話データがまだありません。
           </p>
           <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--muted)" }}>
-            動作確認用のサンプルを投入できます。電話番号は実在しない
-            03-1234-5xxx を使うので、誤って発信されることはありません。
+            動作確認用のサンプルを投入できます。架電データに加え、コールセンター用 FAQ と
+            受付履歴も入ります。電話番号は実在しない 03-1234-5xxx を使うので、
+            誤って発信されることはありません。
           </p>
           <button onClick={() => seed(false)} disabled={seeding}>
             {seeding ? "投入しています…" : "サンプルデータを投入"}

@@ -99,6 +99,33 @@ class CallCenterAssistTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("FAQ シードはテナント単位で空のときだけ入る")
+    void seedKnowledgeIsPerTenant() {
+        UUID a = createTenant("cc-seed-a", "FAQ A");
+        UUID b = createTenant("cc-seed-b", "FAQ B");
+        TenantContext.set(a);
+        assertThat(assist.seedKnowledge(a)).isEqualTo(5);
+        assertThat(assist.seedKnowledge(a)).isZero();
+
+        TenantContext.set(b);
+        assertThat(assist.seedKnowledge(b)).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("デモ用 FAQ と受付履歴をまとめて入れられる")
+    void seedDemoIfEmpty() {
+        UUID tenantId = createTenant("cc-demo-seed", "着信デモ");
+        UUID userId = createUser(tenantId, "cc-demo@example.com", "admin");
+        TenantContext.set(tenantId);
+        var user = new AuthUser(userId, tenantId, "cc-demo@example.com", AuthUser.Role.ADMIN);
+        var seed = assist.seedDemoIfEmpty(user);
+        assertThat(seed.knowledgeArticlesAdded()).isEqualTo(5);
+        assertThat(seed.demoInquiriesAdded()).isEqualTo(3);
+        assertThat(assist.listKnowledge()).hasSize(5);
+        assertThat(assist.listInquiries(10)).hasSize(3);
+    }
+
+    @Test
     @DisplayName("他テナントのナレッジは見えない")
     void knowledgeIsTenantScoped() {
         UUID a = createTenant("cc-own", "自社");

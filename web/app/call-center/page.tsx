@@ -11,11 +11,14 @@
 
 import { CSSProperties, FormEvent, useEffect, useState } from "react";
 import {
+  admin,
   callCenter,
+  getRole,
   getToken,
   type AssistResult,
   type InquiryRow,
   type KnowledgeArticle,
+  type Role,
 } from "@/lib/api";
 
 type KnowledgeState =
@@ -30,6 +33,9 @@ export default function CallCenterPage() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<InquiryRow[] | null>(null);
   const [knowledge, setKnowledge] = useState<KnowledgeState>({ phase: "loading" });
+  const [role, setRole] = useState<Role | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   async function loadSide() {
     try {
@@ -52,8 +58,23 @@ export default function CallCenterPage() {
       window.location.href = "/";
       return;
     }
+    setRole(getRole());
     loadSide();
   }, []);
+
+  async function seedCallCenterDemo() {
+    setSeeding(true);
+    setSeedMsg(null);
+    try {
+      const r = await admin.seedCallCenterSample();
+      setSeedMsg(r.message);
+      await loadSide();
+    } catch (err) {
+      setSeedMsg(err instanceof Error ? err.message : "サンプルを入れられませんでした");
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -153,9 +174,20 @@ export default function CallCenterPage() {
           </div>
         )}
         {knowledge.phase === "ready" && knowledge.rows.length === 0 && (
-          <p style={{ color: "var(--muted)" }}>
-            このテナントに FAQ がありません。サンプルデータを投入するとデモ用の出典が入ります。
-          </p>
+          <div style={{ color: "var(--muted)" }}>
+            <p style={{ marginTop: 0 }}>
+              このテナントに FAQ がありません。管理者は下のボタンでコールセンター用サンプル
+              （FAQ 5 件＋受付履歴 3 件）を入れられます。架電用の一括サンプル投入でも同じ FAQ が入ります。
+            </p>
+            {(role === "admin" || role === "manager") && (
+              <p>
+                <button type="button" disabled={seeding} onClick={seedCallCenterDemo}>
+                  {seeding ? "投入中…" : "コールセンター用サンプルを投入"}
+                </button>
+              </p>
+            )}
+            {seedMsg && <p style={{ color: "var(--fg)" }}>{seedMsg}</p>}
+          </div>
         )}
         {knowledge.phase === "ready" && knowledge.rows.length > 0 && (
           <ul style={{ paddingLeft: 18 }}>
@@ -173,7 +205,18 @@ export default function CallCenterPage() {
         <h2 style={{ fontSize: 16 }}>受付履歴</h2>
         {history === null && <p style={{ color: "var(--muted)" }}>読み込んでいます…</p>}
         {history && history.length === 0 && (
-          <p style={{ color: "var(--muted)" }}>まだありません</p>
+          <div style={{ color: "var(--muted)" }}>
+            <p style={{ marginTop: 0 }}>まだありません。</p>
+            {(role === "admin" || role === "manager") &&
+              knowledge.phase === "ready" &&
+              knowledge.rows.length > 0 && (
+              <p>
+                <button type="button" disabled={seeding} onClick={seedCallCenterDemo}>
+                  {seeding ? "投入中…" : "デモ用の受付履歴を入れる"}
+                </button>
+              </p>
+            )}
+          </div>
         )}
         {history && history.length > 0 && (
           <ul style={{ paddingLeft: 0, listStyle: "none" }}>

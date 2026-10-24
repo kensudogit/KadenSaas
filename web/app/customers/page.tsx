@@ -225,7 +225,7 @@ export default function CustomersPage() {
           {isAdmin ? (
             <>
               <p style={{ margin: "0 0 12px", fontSize: 13 }}>
-                動作確認用のサンプルを投入できます。電話番号は実在しない
+                動作確認用のサンプルを投入できます。コールセンター用 FAQ も含みます。電話番号は実在しない
                 03-1234-5xxx を使うので、誤って発信されることはありません。
               </p>
               <button

@@ -148,9 +148,37 @@ public class CallCenterAssistService {
                 rs.getString("intent")));
     }
 
+    public record DemoSeedResult(int knowledgeArticlesAdded, int demoInquiriesAdded) {
+    }
+
+    private static final List<String> DEMO_INQUIRIES = List.of(
+        "請求書が届きません。再発行できますか。",
+        "発送から1週間経ちますが、商品がまだ届きません。",
+        "ログインできません。パスワードを再設定したいです。"
+    );
+
     @Transactional
     public int seedKnowledge(UUID tenantId) {
         return KnowledgeCatalog.seedIfEmpty(jdbc, tenantId);
+    }
+
+    /**
+     * コールセンター画面の確認用。FAQ と受付履歴のサンプル。発信はしない。
+     */
+    @Transactional
+    public DemoSeedResult seedDemoIfEmpty(AuthUser user) {
+        int articles = KnowledgeCatalog.seedIfEmpty(jdbc, user.tenantId());
+        Integer existing = jdbc.queryForObject(
+            "select count(*) from inbound_inquiries",
+            Integer.class);
+        int inquiriesAdded = 0;
+        if (existing == null || existing == 0) {
+            for (String text : DEMO_INQUIRIES) {
+                assist(user, text, null);
+                inquiriesAdded++;
+            }
+        }
+        return new DemoSeedResult(articles, inquiriesAdded);
     }
 
     private List<Hit> search(String query, String intent) {

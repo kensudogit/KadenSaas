@@ -173,7 +173,8 @@ docker exec -i kadensaas-db-1 psql -U postgres -d kaden < scripts/seed-dev.sql
 | --- | --- |
 | テナント | `demo`（デモ商事） / `other`（別会社） |
 | 担当者 | `operator@demo.example` / `password` |
-| 管理者 | `manager@demo.example` / `password` |
+| マネージャー | `manager@demo.example` / `password`（コールセンター用サンプル投入可） |
+| システム管理者 | `admin@demo.example` / `password`（一括サンプル投入） |
 | キャンペーン ID | `cccccccc-0000-0000-0000-000000000001` |
 
 **株式会社チャーリー（03-1234-0003）は DNC に入れてある。**

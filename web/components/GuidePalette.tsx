@@ -275,10 +275,11 @@ export default function GuidePalette() {
                   「すべて通りました」が出れば準備完了
                 </>,
                 <>
-                  <a href="http://localhost:3000" style={linkStyle}>
-                    localhost:3000
+                  <a href="http://localhost:3002" style={linkStyle}>
+                    localhost:3002
                   </a>
-                  でログイン。テナント <Code inline>demo</Code> /
+                  （compose の web。3000 が埋まっているときは 3002）でログイン。
+                  テナント <Code inline>demo</Code> /
                   <Code inline>operator@demo.example</Code> /
                   <Code inline>password</Code>
                 </>,
@@ -322,7 +323,9 @@ export default function GuidePalette() {
                   <Code inline>KADEN_SIGNUP_TOKEN</Code> を設定したときだけ使えます
                 </>,
                 <>
-                  <b>サンプルを投入</b> — KPI 画面の「サンプルデータを投入」（管理者のみ）。
+                  <b>サンプルを投入</b> — ダッシュボードまたは顧客リストの
+                  「サンプルデータを投入」（<b>管理者のみ</b>）。
+                  架電用データに加え、コールセンター用 FAQ 5 件と受付履歴 3 件も入ります。
                   電話番号は実在しない 03-1234-5xxx なので誤発信しません
                 </>,
                 <>
@@ -330,8 +333,41 @@ export default function GuidePalette() {
                   「次の 1 件を受け取る」
                 </>,
                 <>
-                  <b>着信問い合わせ</b> — コールセンター画面で本文を入れ
-                  「回答案を作る」。出典の無い案内は作りません。ここから発信しません
+                  <b>コールセンターを確認</b> — ナビの
+                  <a href="/call-center" style={linkStyle}>
+                    コールセンター
+                  </a>
+                  タブ。FAQ と受付履歴が空なら、同画面の
+                  「コールセンター用サンプルを投入」（manager / admin）でデモデータだけ足せます
+                </>,
+              ]}
+            />
+          </Card>
+
+          <SectionLabel>コールセンター（着信オペレーター支援）</SectionLabel>
+          <Card>
+            <Steps
+              items={[
+                <>
+                  <b>ここから発信しない。</b> 架電画面・DialingGate とは別経路です。
+                  音声認識精度も RAG 精度も未計測。音声は学習に使いません
+                </>,
+                <>
+                  <b>1. サンプルを入れる</b> — manager または admin で
+                  <a href="/call-center" style={linkStyle}>
+                    /call-center
+                  </a>
+                  を開き「コールセンター用サンプルを投入」。または一括サンプル投入。
+                  ナレッジ 5 件と受付履歴 3 件がテナントに入ります
+                </>,
+                <>
+                  <b>2. 問い合わせを試す</b> — 例:「請求書が届きません。再発行できますか。」
+                  →「回答案を作る」。意図 <Code inline>billing</Code>、出典にチャンク ID、
+                  回答案に FAQ 本文が付きます
+                </>,
+                <>
+                  <b>3. 該当なし</b> — ナレッジに無い文言は「出典の無い案内は作りません」と返します。
+                  生成だけで FAQ を捏造しません
                 </>,
               ]}
             />
@@ -357,6 +393,12 @@ export default function GuidePalette() {
                 <>
                   <b>コールリストが枯れる</b> —
                   予約の期限切れ解放ジョブが動いていません
+                </>,
+                <>
+                  <b>コールセンターの FAQ が空</b> —
+                  テナントにナレッジが無いか、RLS で 0 行になっています。
+                  管理者で「コールセンター用サンプルを投入」するか、
+                  <Code inline>scripts/seed-dev.sql</Code> を流してください
                 </>,
               ]}
             />

@@ -40,7 +40,10 @@ final class KnowledgeCatalog {
     }
 
     static int seedIfEmpty(JdbcTemplate jdbc, UUID tenantId) {
-        Integer n = jdbc.queryForObject("select count(*) from knowledge_articles", Integer.class);
+        Integer n = jdbc.queryForObject(
+            "select count(*) from knowledge_articles where tenant_id = ?",
+            Integer.class,
+            tenantId);
         if (n != null && n > 0) {
             return 0;
         }

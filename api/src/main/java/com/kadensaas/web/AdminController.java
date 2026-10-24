@@ -121,7 +121,25 @@ public class AdminController {
             "callSessions", s.callSessions(),
             "dncEntries", s.dncEntries(),
             "callbacks", s.callbacks(),
+            "callCenterKnowledge", s.callCenterKnowledge(),
+            "callCenterInquiries", s.callCenterInquiries(),
             "message", "サンプルデータを投入しました"));
+    }
+
+    /**
+     * コールセンター画面用の FAQ と受付履歴だけ入れる。
+     *
+     * <p>★ 顧客データが既にあっても使える。着信の回答案確認専用で、発信はしない。
+     */
+    @PostMapping("/sample-data/call-center")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<?> seedCallCenter() {
+        var user = CurrentUser.require();
+        var seed = sampleData.seedCallCenterDemo(user);
+        return ResponseEntity.ok(Map.of(
+            "knowledgeArticlesAdded", seed.knowledgeArticlesAdded(),
+            "demoInquiriesAdded", seed.demoInquiriesAdded(),
+            "message", "コールセンター用サンプルを投入しました"));
     }
 
     /**
