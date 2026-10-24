@@ -220,6 +220,58 @@ public class CallCenterOpenAiClient {
         return Optional.of(new ComposeResult(reply, List.copyOf(checklist)));
     }
 
+    /**
+     * FAQ に該当が無いときの一般論ベースの下書き。事実の断定は避ける。
+     */
+    public Optional<ComposeResult> composeWithoutKnowledge(String inquiry, String intent) {
+        if (!configured()) {
+            return Optional.empty();
+        }
+        String system = """
+            コールセンターのオペレーター支援です。社内FAQに該当が無い問い合わせ向けに、
+            一般論のみの回答下書きを JSON で返してください。
+            形式:
+            {"reply":"...","operatorChecklist":["..."]}
+
+            reply のルール:
+            - 1行目は必ず「出典 該当なし（AI下書き・未確認）」
+            - 2行目以降: 読み上げやすい丁寧な案内（3〜6文）。マークダウン禁止
+            - 具体的な金額・日付・社内ポリシー・返金可否を断定しない
+            - 「確認のうえ折り返す」「上長・担当部署へエスカレーション」など安全な案内に留める
+            - 不明点は「確認が必要」
+
+            operatorChecklist:
+            - 通話中に確認すべき項目を0〜5個（短い日本語）
+            """;
+        String user = """
+            分類された意図: %s
+
+            お客様の問い合わせ:
+            %s
+            """.formatted(intent, inquiry);
+
+        Optional<JsonNode> node = chatJson(system, user, 0.4, 700);
+        if (node.isEmpty()) {
+            return Optional.empty();
+        }
+        JsonNode root = node.get();
+        String reply = root.path("reply").asText("").strip();
+        if (reply.isBlank()) {
+            return Optional.empty();
+        }
+        List<String> checklist = new ArrayList<>();
+        JsonNode arr = root.path("operatorChecklist");
+        if (arr.isArray()) {
+            for (JsonNode item : arr) {
+                String line = item.asText("").strip();
+                if (!line.isEmpty() && checklist.size() < 5) {
+                    checklist.add(line);
+                }
+            }
+        }
+        return Optional.of(new ComposeResult(reply, List.copyOf(checklist)));
+    }
+
     private Optional<JsonNode> chatJson(String system, String user, double temperature, int maxTokens) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);

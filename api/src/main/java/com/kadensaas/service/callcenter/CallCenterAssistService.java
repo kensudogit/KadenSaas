@@ -21,8 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>★ 発信しない。{@code call_sessions} も作らない。
  * DialingGate を通らない経路から電話を鳴らさないための境界。
  *
- * <p>★ ヒットしたチャンクだけを引用する。無いときは「該当なし」。
- * 生成だけで FAQ を捏造しない。
+ * <p>★ RAG ヒット時はチャンクを出典にする。ヒット無しで OpenAI 有効時は
+ * 「出典 該当なし（AI下書き）」として一般論の下書きを作れる（設定で無効化可）。
  */
 @Service
 public class CallCenterAssistService {
@@ -38,6 +38,7 @@ public class CallCenterAssistService {
         List<Hit> hits,
         String reply,
         List<String> operatorChecklist,
+        boolean ragGrounded,
         boolean trainingUse,
         String note
     ) {
@@ -59,14 +60,18 @@ public class CallCenterAssistService {
     private final JdbcTemplate jdbc;
     private final AuditService audit;
     private final CallCenterOpenAiClient openAi;
+    private final boolean aiDraftWithoutRag;
 
     public CallCenterAssistService(
             JdbcTemplate jdbc,
             AuditService audit,
-            CallCenterOpenAiClient openAi) {
+            CallCenterOpenAiClient openAi,
+            @org.springframework.beans.factory.annotation.Value(
+                "${kaden.call-center.ai-draft-without-rag:true}") boolean aiDraftWithoutRag) {
         this.jdbc = jdbc;
         this.audit = audit;
         this.openAi = openAi;
+        this.aiDraftWithoutRag = aiDraftWithoutRag;
     }
 
     public boolean openAiConfigured() {
@@ -136,6 +141,7 @@ public class CallCenterAssistService {
             hits,
             reply,
             draft.operatorChecklist(),
+            !hits.isEmpty(),
             false,
             draft.note());
     }
@@ -215,6 +221,17 @@ public class CallCenterAssistService {
 
     private Draft buildReply(String transcript, String intent, List<Hit> hits, String ragNote) {
         if (hits.isEmpty()) {
+            if (openAi.configured() && aiDraftWithoutRag) {
+                return openAi.composeWithoutKnowledge(transcript, intent)
+                    .map(result -> new Draft(
+                        ensureNoRagBanner(result.reply()),
+                        "openai_no_rag_draft_not_measured_accuracy",
+                        result.operatorChecklist()))
+                    .orElseGet(() -> new Draft(
+                        draftTemplate(intent, hits),
+                        "openai_no_rag_failed",
+                        List.of()));
+            }
             return new Draft(
                 draftTemplate(intent, hits),
                 "lexical_rag_no_hits",
@@ -246,6 +263,15 @@ public class CallCenterAssistService {
             return reply;
         }
         return "出典 " + cited + "\n" + reply;
+    }
+
+    private static final String NO_RAG_BANNER = "出典 該当なし（AI下書き・未確認）";
+
+    private static String ensureNoRagBanner(String reply) {
+        if (reply.contains("出典 該当なし")) {
+            return reply;
+        }
+        return NO_RAG_BANNER + "\n" + reply;
     }
 
     @Transactional(readOnly = true)

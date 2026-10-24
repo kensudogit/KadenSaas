@@ -110,8 +110,8 @@ export default function CallCenterPage() {
       <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 0 }}>
         着信の文言から意図・ナレッジ出典・回答案を出します。ここから発信はしません。
         {openAiOn
-          ? ` OPENAI_API_KEY 設定時（${openAiModel || "gpt-4o-mini"}）は、FAQ 出典のみを根拠に回答案・確認項目を生成します。語彙が合わないときは意図整合または AI チャンク選定を試します。`
-          : " OpenAI 未設定時は語彙 RAG とテンプレート回答です。請求・配送など意図がはっきりしていれば語彙不一致でも FAQ を参照できます。"}
+          ? ` OPENAI_API_KEY 設定時（${openAiModel || "gpt-4o-mini"}）は FAQ 出典付きで回答案を生成します。FAQ に該当が無い場合は「出典 該当なし（AI下書き）」として AI が一般論の下書きを作成します。`
+          : " OpenAI 未設定時は語彙 RAG とテンプレート回答です。FAQ に該当が無い場合は回答案を作りません。"}
         精度は未計測です。音声は学習に使いません。
       </p>
 
@@ -172,6 +172,20 @@ export default function CallCenterPage() {
               : "該当なし"
             : "まだありません"}
         </pre>
+        {result && !result.ragGrounded && result.note !== "lexical_rag_no_hits" ? (
+          <p
+            role="status"
+            style={{
+              border: "1px solid var(--accent)",
+              borderRadius: 6,
+              padding: "8px 12px",
+              fontSize: 13,
+              marginBottom: 12,
+            }}
+          >
+            FAQ に該当がありません。以下は AI が作った未確認の下書きです。社内確認のうえお客様へ案内してください。
+          </p>
+        ) : null}
         <h2 style={{ fontSize: 16 }}>回答案</h2>
         <pre style={{ ...box, whiteSpace: "pre-wrap" }}>
           {result?.reply ?? "まだありません"}

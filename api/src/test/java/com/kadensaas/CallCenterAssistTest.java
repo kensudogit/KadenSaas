@@ -61,12 +61,13 @@ class CallCenterAssistTest extends AbstractIntegrationTest {
         assertThat(body.get("hits").isEmpty()).isFalse();
         assertThat(body.get("hits").get(0).get("intent").asText()).isEqualTo("billing");
         assertThat(body.get("reply").asText()).contains("出典");
+        assertThat(body.get("ragGrounded").asBoolean()).isTrue();
         assertThat(body.get("trainingUse").asBoolean()).isFalse();
     }
 
     @Test
-    @DisplayName("該当が無いとき FAQ を捏造しない")
-    void emptyDoesNotInvent() throws Exception {
+    @DisplayName("OpenAI 未設定で RAG が空のときは FAQ 下書きを作らない")
+    void emptyDoesNotInventWhenOpenAiOff() throws Exception {
         String token = readyTenant("cc-b", "着信B社");
 
         var response = mvc.perform(post("/api/v1/call-center/assist")
@@ -78,7 +79,9 @@ class CallCenterAssistTest extends AbstractIntegrationTest {
         assertThat(response.getStatus()).isEqualTo(200);
         JsonNode body = json.readTree(response.getContentAsString());
         assertThat(body.get("hits").isEmpty()).isTrue();
+        assertThat(body.get("ragGrounded").asBoolean()).isFalse();
         assertThat(body.get("reply").asText()).contains("該当");
+        assertThat(body.get("note").asText()).isEqualTo("lexical_rag_no_hits");
     }
 
     @Test

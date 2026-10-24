@@ -80,6 +80,8 @@ kaden:
     # ★ 設定時のみ「回答案を作る」が OpenAI を使う。未設定時はテンプレート回答
     openai-api-key: ${OPENAI_API_KEY:}
     openai-model: ${KADEN_CALLCENTER_OPENAI_MODEL:gpt-4o-mini}
+    # ★ RAG ヒット無し時に OpenAI で下書きを作る（出典なしと明示）。false で従来どおり拒否
+    ai-draft-without-rag: ${KADEN_CALL_CENTER_AI_DRAFT_WITHOUT_RAG:true}
   billing:
     stripe-secret-key: ${STRIPE_SECRET_KEY:}
     stripe-webhook-secret: ${STRIPE_WEBHOOK_SECRET:}

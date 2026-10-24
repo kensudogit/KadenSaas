@@ -80,6 +80,7 @@ services:
       KADEN_SIGNUP_TOKEN: local-signup-token-for-testing
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       KADEN_CALLCENTER_OPENAI_MODEL: ${KADEN_CALLCENTER_OPENAI_MODEL:-gpt-4o-mini}
+      KADEN_CALL_CENTER_AI_DRAFT_WITHOUT_RAG: ${KADEN_CALL_CENTER_AI_DRAFT_WITHOUT_RAG:-true}
     ports:
       - "8080:8080"
     depends_on:

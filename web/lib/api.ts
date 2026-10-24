@@ -367,6 +367,7 @@ export interface AssistResult {
   hits: AssistHit[];
   reply: string;
   operatorChecklist: string[];
+  ragGrounded: boolean;
   trainingUse: boolean;
   note: string;
 }
