@@ -1,0 +1,99 @@
+# ============================================================================
+# 業務 API の設定。
+#
+# ★ アプリの接続は kaden_app（RLS が効く側）。Flyway だけ kaden_migrator。
+#   1 つの接続で両方をやらない。migrator でアプリを動かすと RLS が素通りする。
+# ============================================================================
+
+spring:
+  application:
+    name: kaden-api
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/kaden}
+    username: ${SPRING_DATASOURCE_USERNAME:kaden_app}
+    password: ${SPRING_DATASOURCE_PASSWORD:kaden_app_dev}
+    hikari:
+      # ★ プールを使い回すので、テナントは必ずトランザクション単位で設定する。
+      #   接続単位で set すると、返却された接続に前のテナントの値が残る
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      auto-commit: false
+
+  jpa:
+    hibernate:
+      # ★ スキーマは Flyway が持つ。Hibernate に触らせない
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    # ★ user / password に既定値を置かない。
+    #
+    #   置くと、本番で SPRING_FLYWAY_* も DATABASE_MIGRATOR_URL も未設定のとき、
+    #   開発用のロール名とパスワードに静かにフォールバックする。
+    #   そして落ちるときのメッセージは
+    #     FATAL: password authentication failed for user "kaden_migrator"
+    #   になり、「そんなロールは作っていない」ことに気付くまで時間を溶かす。
+    #   実際に Railway のデプロイでこれを踏んだ。
+    #
+    #   未設定なら Flyway は spring.datasource の資格情報をそのまま使う。
+    #   本番では DATABASE_MIGRATOR_URL（BYPASSRLS を持つロール）を渡して
+    #   分離すること。分離しないと、アプリと同じロールで DDL を打つことになる。
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+
+kaden:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+    ttl-minutes: ${JWT_TTL_MINUTES:120}
+  cors:
+    origin: ${CORS_ORIGIN:http://localhost:3000}
+  signup:
+    # ★ open / token / disabled。
+    #
+    #   open     — 誰でも登録できる（既定）
+    #   token    — X-Signup-Token が KADEN_SIGNUP_TOKEN と一致する場合だけ
+    #   disabled — 404。機能ごと存在しないものとして扱う
+    #
+    # ★ token を指定しながら KADEN_SIGNUP_TOKEN が空なら、起動時に落とす。
+    #   「有効にしたがトークンを付け忘れて全開だった」を作らせない
+    mode: ${KADEN_SIGNUP_MODE:open}
+    token: ${KADEN_SIGNUP_TOKEN:}
+
+    # ★ 公開サインアップでは必須。無いと 1 分間に数千のテナントを作られる。
+    #   数えるのは DB（アプリのメモリだとインスタンスが増えた分だけ上限が緩む）
+    rate-limit:
+      window-minutes: ${KADEN_SIGNUP_RATE_WINDOW_MINUTES:60}
+      max-per-ip: ${KADEN_SIGNUP_RATE_MAX_PER_IP:5}
+  # ★ 発信は voice サービスにしか投げない。ここから Twilio を直接叩かない
+  voice:
+    base-url: ${VOICE_BASE_URL:http://localhost:8001}
+  billing:
+    stripe-secret-key: ${STRIPE_SECRET_KEY:}
+    stripe-webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      # ★ 「プロセスが生きている」ではなく「DB に繋がる」で判定する。
+      #   前者だと DB 断でもロードバランサに入れられ続ける
+      show-details: never
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.kadensaas: ${LOG_LEVEL:INFO}

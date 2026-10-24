@@ -96,6 +96,23 @@ public final class PermissionCatalog {
             "オペレーターは自分の通話だけ。manager 以上は全員分を見られる",
             EVERYONE, "GET", "/api/v1/call-history"),
 
+        new Capability("callcenter.assist", "着信問い合わせの回答案を作る",
+            "意図分類とナレッジ出典付きの回答案。発信はしない",
+            EVERYONE, "POST", "/api/v1/call-center/assist", "",
+            "{\"text\":\"権限の検査\"}"),
+
+        new Capability("callcenter.knowledge", "着信ナレッジを見る",
+            "回答案の出典になる FAQ。テナントごとに分かれる",
+            EVERYONE, "GET", "/api/v1/call-center/knowledge"),
+
+        new Capability("callcenter.inquiries", "着信受付履歴を見る",
+            "オペレーター支援の受付履歴。音声は学習に使わない",
+            EVERYONE, "GET", "/api/v1/call-center/inquiries"),
+
+        new Capability("callcenter.inquiry_delete", "着信受付履歴を削除する",
+            "保存期間内のデモ受付を消す。発信や DNC には影響しない",
+            EVERYONE, "DELETE", "/api/v1/call-center/inquiries/00000000-0000-0000-0000-000000000001"),
+
         new Capability("dnc.register", "再勧誘拒否として登録する",
             "断られた相手を登録する。架電結果で DO_NOT_CALL を選んだ場合は"
                 + "オペレーターでも自動的に登録される",

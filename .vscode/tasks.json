@@ -1,0 +1,57 @@
+{
+  // ==========================================================================
+  // デバッグ実行の前後で使うタスク。
+  // 「全部: api + voice + web」の preLaunchTask から依存サービスを上げる。
+  // ==========================================================================
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "依存サービスを起動 (db/redis/minio)",
+      "type": "shell",
+      "command": "docker compose up -d db redis minio",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "依存サービスを停止",
+      "type": "shell",
+      "command": "docker compose down",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "api: テスト (gradle)",
+      "type": "shell",
+      // ★ Testcontainers を使うので Docker が必要
+      "command": "./gradlew test",
+      "options": { "cwd": "${workspaceFolder}/api" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "voice: テスト (pytest)",
+      "type": "shell",
+      "command": "${workspaceFolder}/voice/.venv/Scripts/python.exe -m pytest -v",
+      "options": { "cwd": "${workspaceFolder}/voice" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "web: テスト (vitest)",
+      "type": "shell",
+      "command": "npm test",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "web: 型チェック",
+      "type": "shell",
+      "command": "npm run typecheck",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "group": "build",
+      "problemMatcher": ["$tsc"]
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import com.kadensaas.security.AuthUser;
+import com.kadensaas.service.callcenter.CallCenterAssistService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,10 +56,13 @@ public class SampleDataService {
 
     private final JdbcTemplate jdbc;
     private final AuditService audit;
+    private final CallCenterAssistService callCenter;
 
-    public SampleDataService(JdbcTemplate jdbc, AuditService audit) {
+    public SampleDataService(JdbcTemplate jdbc, AuditService audit,
+                             CallCenterAssistService callCenter) {
         this.jdbc = jdbc;
         this.audit = audit;
+        this.callCenter = callCenter;
     }
 
     /** すでにサンプル（というより何らかの顧客）が入っているか。 */
@@ -79,6 +83,9 @@ public class SampleDataService {
             values (?, ?, true, true)
             on conflict (tenant_id) do nothing
             """, tenantId, "+81300000000");
+
+        // ★ 着信画面の出典。発信はしない
+        callCenter.seedKnowledge(tenantId);
 
         UUID campaignId = UUID.randomUUID();
         jdbc.update("""
@@ -271,6 +278,9 @@ public class SampleDataService {
         //   call_sessions は customers に cascade で消えるが、
         //   キャンペーンだけが残ると画面に空のキャンペーンが並ぶ
         for (String sql : List.of(
+                "delete from inbound_inquiries",
+                "delete from knowledge_chunks",
+                "delete from knowledge_articles",
                 "delete from callbacks",
                 "delete from call_targets",
                 "delete from call_sessions",

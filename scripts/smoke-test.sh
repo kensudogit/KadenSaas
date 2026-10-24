@@ -73,6 +73,16 @@ nonempty() {
 }
 
 nonempty "/api/v1/customers"          "顧客一覧"
+nonempty "/api/v1/call-center/knowledge" "着信ナレッジ"
+
+assist=$(curl -s --max-time 10 -X POST "$API/api/v1/call-center/assist" \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"text":"請求書が届きません。再発行できますか。"}')
+case "$assist" in
+  *billing*) pass "着信回答案（billing）" ;;
+  *)         ng "着信回答案（billing が返らない）" ;;
+esac
+
 nonempty "/api/v1/calls/dispositions" "結果コード一覧"
 nonempty "/api/v1/calls"              "通話履歴"
 nonempty "/api/v1/dnc"                "DNC 一覧"

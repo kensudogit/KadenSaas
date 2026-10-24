@@ -1,0 +1,146 @@
+{
+  // ==========================================================================
+  // デバッグ構成。
+  //
+  // ★ これを置くと、行番号の左（グリフマージン）に ▷ が出る。
+  //   Java の main / テストメソッド、pytest のテスト関数、vitest のテストが
+  //   それぞれ「実行 | デバッグ」で起動できるようになる。
+  //   アイコンが出ない場合は .vscode/extensions.json の推奨拡張を入れること。
+  //
+  // ★ 接続先はローカルの docker compose に合わせてある（db は 5433、
+  //   redis は 6380）。先に `docker compose up -d db redis minio` を上げる。
+  //   タスク「依存サービスを起動」が同じことをする。
+  // ==========================================================================
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // api（Spring Boot）。KadenApiApplication.java の main の上に
+      // 「Run | Debug」の CodeLens が出る。ここからでも起動できる
+      "type": "java",
+      "name": "api: Spring Boot をデバッグ",
+      "request": "launch",
+      "mainClass": "com.kadensaas.KadenApiApplication",
+      "projectName": "kaden-api",
+      "cwd": "${workspaceFolder}/api",
+      "console": "internalConsole",
+      "env": {
+        // application.yml の既定値と同じ。明示しておくと、
+        // 環境変数を汚したときに何が効いているか分かる
+        "SPRING_DATASOURCE_URL": "jdbc:postgresql://localhost:5433/kaden",
+        "SPRING_DATASOURCE_USERNAME": "kaden_app",
+        "SPRING_DATASOURCE_PASSWORD": "kaden_app_dev",
+        "SPRING_FLYWAY_USER": "kaden_migrator",
+        "SPRING_FLYWAY_PASSWORD": "kaden_migrator_dev",
+        "REDIS_URL": "redis://localhost:6380/0",
+        "JWT_SECRET": "dev-only-secret-change-me-0123456789abcdef",
+        "VOICE_BASE_URL": "http://localhost:8001",
+        "CORS_ORIGIN": "http://localhost:3000",
+        "KADEN_SIGNUP_TOKEN": "local-signup-token-for-testing"
+      }
+    },
+    {
+      // api のコンテナ側にアタッチする。JAVA_TOOL_OPTIONS に
+      // -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      // を渡し、5005 を公開しておくこと
+      "type": "java",
+      "name": "api: 起動中のプロセスにアタッチ (5005)",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 5005
+    },
+    {
+      // voice（FastAPI）。--reload 付きなので保存で再起動する
+      "type": "debugpy",
+      "name": "voice: FastAPI をデバッグ",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.app:app", "--reload", "--port", "8001"],
+      "cwd": "${workspaceFolder}/voice",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        // ★ production のままだと PUBLIC_BASE_URL に https を要求されて
+        //   localhost では起動しない。開発モードを宣言する
+        "APP_ENV": "development",
+        "DATABASE_URL": "postgresql://kaden_app:kaden_app_dev@localhost:5433/kaden",
+        "REDIS_URL": "redis://localhost:6380/0",
+        // ★ api と 1 文字でも違うと、api が発行したトークンを検証できない
+        "JWT_SECRET": "dev-only-secret-change-me-0123456789abcdef",
+        "PUBLIC_BASE_URL": "http://localhost:8001",
+        "ASR_PROVIDER": "null",
+        "S3_ENDPOINT": "http://localhost:9000",
+        "S3_BUCKET": "kaden-recordings",
+        "S3_ACCESS_KEY": "minioadmin",
+        "S3_SECRET_KEY": "minioadmin"
+      }
+    },
+    {
+      // 開いている pytest ファイルだけをデバッグ実行する。
+      // テスト関数の行にも ▷ が出るので、通常はそちらで足りる
+      "type": "debugpy",
+      "name": "voice: このファイルの pytest",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-v"],
+      "cwd": "${workspaceFolder}/voice",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "APP_ENV": "development",
+        "DATABASE_URL": "postgresql://kaden_app:kaden_app_dev@localhost:5433/kaden",
+        "JWT_SECRET": "dev-only-secret-change-me-0123456789abcdef",
+        "PUBLIC_BASE_URL": "http://localhost:8001"
+      }
+    },
+    {
+      "type": "debugpy",
+      "name": "voice: 起動中のプロセスにアタッチ (5678)",
+      "request": "attach",
+      "connect": { "host": "localhost", "port": 5678 },
+      "justMyCode": false,
+      "pathMappings": [
+        { "localRoot": "${workspaceFolder}/voice", "remoteRoot": "/app" }
+      ]
+    },
+    {
+      // web のサーバー側（Server Components / Route Handlers）
+      "type": "node-terminal",
+      "name": "web: Next.js dev をデバッグ (サーバー)",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/web"
+    },
+    {
+      // web のクライアント側。dev サーバーが上がってから使う
+      "type": "chrome",
+      "name": "web: ブラウザをデバッグ (クライアント)",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}/web"
+    },
+    {
+      "type": "node",
+      "name": "web: このファイルの vitest",
+      "request": "launch",
+      "program": "${workspaceFolder}/web/node_modules/vitest/vitest.mjs",
+      "args": ["run", "${file}"],
+      "cwd": "${workspaceFolder}/web",
+      "console": "integratedTerminal",
+      "smartStep": true,
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ],
+  "compounds": [
+    {
+      // 3 サービスまとめて。db / redis / minio は別途 compose で上げておく
+      "name": "全部: api + voice + web",
+      "configurations": [
+        "api: Spring Boot をデバッグ",
+        "voice: FastAPI をデバッグ",
+        "web: Next.js dev をデバッグ (サーバー)"
+      ],
+      "preLaunchTask": "依存サービスを起動 (db/redis/minio)",
+      "stopAll": true
+    }
+  ]
+}

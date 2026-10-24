@@ -105,6 +105,7 @@ public abstract class AbstractIntegrationTest {
         // ★ テスト間でデータを持ち越さない。superuser で消すので RLS を跨げる
         JdbcTemplate jdbc = admin();
         for (String table : new String[] {
+            "inbound_inquiries", "knowledge_chunks", "knowledge_articles",
             "call_dispositions", "call_events", "call_sessions", "call_targets",
             "callbacks", "do_not_call_entries", "customer_phones", "customers",
             "campaigns", "audit_logs", "tenant_telephony", "users", "tenants"

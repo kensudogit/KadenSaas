@@ -31,6 +31,7 @@ const ITEMS: Item[] = [
   { href: "/dashboard", label: "ダッシュボード" },
   { href: "/customers", label: "顧客リスト" },
   { href: "/operator", label: "架電" },
+  { href: "/call-center", label: "コールセンター" },
   { href: "/history", label: "架電履歴" },
   { href: "/analytics", label: "分析", roles: ["manager", "admin"] },
   { href: "/settings/telephony", label: "電話設定", roles: ["manager", "admin"] },

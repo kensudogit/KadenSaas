@@ -334,6 +334,63 @@ export const telephony = {
     ),
 };
 
+// ---------------------------------------------------------------- コールセンター（着信）
+
+/**
+ * 着信問い合わせの回答案。
+ *
+ * ★ 発信しない。ここを叩いても call_sessions は増えない。
+ * ★ ヒットしたチャンクだけを引用する。無いときは「該当なし」。
+ */
+export interface AssistHit {
+  chunkId: string;
+  articleId: string;
+  content: string;
+  intent: string;
+  score: number;
+}
+
+export interface AssistResult {
+  id: string;
+  transcript: string;
+  intent: string;
+  nlp: { intent: string; score: number; provider: string; note: string };
+  hits: AssistHit[];
+  reply: string;
+  trainingUse: boolean;
+  note: string;
+}
+
+export interface InquiryRow {
+  id: string;
+  transcript: string;
+  intent: string;
+  reply: string;
+  sources: string;
+  createdAt: string;
+}
+
+export interface KnowledgeArticle {
+  id: string;
+  title: string;
+  body: string;
+  intent: string;
+}
+
+export const callCenter = {
+  assist: (text: string) =>
+    api<AssistResult>("/api/v1/call-center/assist", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  inquiries: () => api<InquiryRow[]>("/api/v1/call-center/inquiries"),
+  deleteInquiry: (id: string) =>
+    api<{ ok: boolean }>(`/api/v1/call-center/inquiries/${id}`, {
+      method: "DELETE",
+    }),
+  knowledge: () => api<KnowledgeArticle[]>("/api/v1/call-center/knowledge"),
+};
+
 export const dnc = {
   register: (phone: string, reason: string) =>
     api<{ ok: boolean; e164: string }>("/api/v1/dnc", {

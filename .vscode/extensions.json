@@ -1,0 +1,14 @@
+{
+  // ★ 行番号の左の ▷ は拡張が描いている。これらが無いとアイコンは出ない。
+  //   Java = Debugger for Java / Test Runner、Python = Python + debugpy、
+  //   TypeScript = Vitest。
+  "recommendations": [
+    "vscjava.vscode-java-pack",
+    "vmware.vscode-boot-dev-pack",
+    "ms-python.python",
+    "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "vitest.explorer",
+    "ms-azuretools.vscode-docker"
+  ]
+}
