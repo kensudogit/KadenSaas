@@ -75,7 +75,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: dev-only-secret-change-me-0123456789abcdef
       VOICE_BASE_URL: http://voice:8001
-      CORS_ORIGIN: http://localhost:3000,http://localhost:3002
+      # ★ Docker は 127.0.0.1:3003 に bind する。localhost だけ許可するとブラウザが 127.0.0.1 で開いたとき CORS 403 になる
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3002,http://localhost:3003,http://127.0.0.1:3003
       # ★ ローカル検証用。未設定なら登録の口ごと無効になる
       KADEN_SIGNUP_TOKEN: local-signup-token-for-testing
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -140,8 +141,8 @@ services:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
       NEXT_PUBLIC_VOICE_BASE_URL: http://localhost:8001
     ports:
-      # ★ 3000 が他プロジェクトと衝突したら 3002 に逃がす（CORS_ORIGIN も合わせる）
-      - "3002:3000"
+      # ★ 3002 は sns-operations 等と衝突しやすい。KadenSaas は 3003 固定（CORS も合わせる）
+      - "127.0.0.1:3003:3000"
     depends_on:
       - api
 

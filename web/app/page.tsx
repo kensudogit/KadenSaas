@@ -53,7 +53,10 @@ export default function LoginPage() {
         <h1 style={{ fontSize: 22, margin: 0 }}>架電SaaS</h1>
       </div>
       <p style={{ color: "var(--muted)", marginTop: 0, fontSize: 14 }}>
-        テナントの識別子と、担当者のアカウントでログインします
+        テナントの識別子と、担当者のアカウントでログインします。
+        ローカル Docker デモ: テナント <code>demo</code> /{" "}
+        <code>operator@demo.example</code> / <code>password</code>
+        （<code>scripts/seed-dev.sql</code> 投入後）
       </p>
 
       <form onSubmit={submit} style={{ display: "grid", gap: 14, marginTop: 24 }}>

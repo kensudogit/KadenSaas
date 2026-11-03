@@ -3,6 +3,7 @@ package com.kadensaas.web;
 import java.util.Map;
 
 import com.kadensaas.service.SampleDataService;
+import com.kadensaas.service.SchemaDiagnosticsService;
 import com.kadensaas.service.TelephonySettingsService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,11 +27,14 @@ public class AdminController {
 
     private final SampleDataService sampleData;
     private final TelephonySettingsService telephony;
+    private final SchemaDiagnosticsService schema;
 
     public AdminController(SampleDataService sampleData,
-                           TelephonySettingsService telephony) {
+                           TelephonySettingsService telephony,
+                           SchemaDiagnosticsService schema) {
         this.sampleData = sampleData;
         this.telephony = telephony;
+        this.schema = schema;
     }
 
     // ------------------------------------------------------------ 電話設定
@@ -85,6 +89,15 @@ public class AdminController {
     public Object diagnose() {
         var d = telephony.diagnose(CurrentUser.require());
         return Map.of("canDial", d.canDial(), "checks", d.checks());
+    }
+
+    /**
+     * Flyway / オートダイヤラー用スキーマの診断（Railway で V18 未適用の切り分け用）。
+     */
+    @GetMapping("/schema/diagnose")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public SchemaDiagnosticsService.Report schemaDiagnose() {
+        return schema.diagnose();
     }
 
     /**

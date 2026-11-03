@@ -109,6 +109,15 @@ export default function AutoDialerPage() {
       {error && (
         <div role="alert" style={{ color: "var(--danger)", marginBottom: 12 }}>
           {error}
+          {error.includes("マイグレーション") || error.includes("データベース") ? (
+            <p style={{ fontSize: 13, marginTop: 8, color: "var(--muted)" }}>
+              Railway 本番: api に{" "}
+              <code>DATABASE_MIGRATOR_URL</code>（kaden_migrator）を設定し、V18 入り
+              api を Redeploy。管理者は{" "}
+              <code>GET /api/v1/admin/schema/diagnose</code> で確認（詳細{" "}
+              <code>db/RAILWAY-FLYWAY.md</code>）。
+            </p>
+          ) : null}
         </div>
       )}
 

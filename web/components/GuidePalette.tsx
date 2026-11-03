@@ -276,10 +276,10 @@ export default function GuidePalette() {
                   「すべて通りました」が出れば準備完了
                 </>,
                 <>
-                  <a href="http://localhost:3002" style={linkStyle}>
-                    localhost:3002
+                  <a href="http://localhost:3003" style={linkStyle}>
+                    localhost:3003
                   </a>
-                  （compose の web。3000 が埋まっているときは 3002）でログイン。
+                  （compose の web。3002 は他プロジェクトと衝突しやすいので 3003 固定）でログイン。
                   テナント <Code inline>demo</Code> /
                   <Code inline>operator@demo.example</Code> /
                   <Code inline>password</Code>
@@ -302,9 +302,17 @@ export default function GuidePalette() {
                 </>,
                 <>
                   <Code inline>db/bootstrap-roles.sql</Code> で
-                  <Code inline>kaden_app</Code> を作り、
-                  <Code inline>DATABASE_URL</Code> をそこへ向ける。
-                  <b>既定の superuser のままだと RLS が効かず起動を拒否します</b>
+                  <Code inline>kaden_app</Code> /{" "}
+                  <Code inline>kaden_migrator</Code> を作る。
+                  <Code inline>DATABASE_URL</Code> は app、
+                  <Code inline>DATABASE_MIGRATOR_URL</Code> は migrator（Flyway 必須）。
+                  <b>superuser のままだと RLS が効きません</b>
+                </>,
+                <>
+                  <b>オートダイヤラーで DB エラー</b> —{" "}
+                  <Code inline>db/RAILWAY-FLYWAY.md</Code>。
+                  manager 以上は{" "}
+                  <Code inline>/api/v1/admin/schema/diagnose</Code>
                 </>,
                 <>
                   <Code inline>JWT_SECRET</Code> は

@@ -177,6 +177,10 @@ public final class PermissionCatalog {
                 + "manager にも開けてある",
             MANAGER_UP, "GET", "/api/v1/admin/telephony/diagnose"),
 
+        new Capability("schema.diagnose", "DB スキーマ（Flyway）を診断する",
+            "オートダイヤラー用 V18。readyForAutoDialer を返す",
+            MANAGER_UP, "GET", "/api/v1/admin/schema/diagnose"),
+
         new Capability("telephony.settings", "発信者番号と録音の設定を変える",
             "他人名義の番号での発信や、録音の可否に関わるため管理者のみ",
             ADMIN_ONLY, "GET", "/api/v1/admin/telephony"),

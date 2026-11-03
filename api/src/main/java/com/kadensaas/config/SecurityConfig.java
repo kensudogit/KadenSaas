@@ -56,6 +56,8 @@ public class SecurityConfig {
                 //   この行は /api/v1/admin/** より前に置く（先勝ち）
                 .requestMatchers(HttpMethod.GET, "/api/v1/admin/telephony/diagnose")
                     .hasAnyRole("MANAGER", "ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/v1/admin/schema/diagnose")
+                    .hasAnyRole("MANAGER", "ADMIN")
                 // ★ 着信デモ用 FAQ のみ。架電データを混ぜない確認用なので manager にも開ける
                 .requestMatchers(HttpMethod.POST, "/api/v1/admin/sample-data/call-center")
                     .hasAnyRole("MANAGER", "ADMIN")
