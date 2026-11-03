@@ -315,6 +315,11 @@ export default function GuidePalette() {
                   <Code inline>/api/v1/admin/schema/diagnose</Code>
                 </>,
                 <>
+                  <Code inline>CORS_ORIGIN</Code>（<b>api</b>）に web の公開 URL。
+                  例: <Code inline>https://web-production-….up.railway.app</Code>。
+                  未設定だと localhost のみ許可され、本番は Failed to fetch になる
+                </>,
+                <>
                   <Code inline>JWT_SECRET</Code> は
                   <Code inline>{"${{KadenSaas.JWT_SECRET}}"}</Code> の参照で繋ぐ。
                   値がずれると「api では通るのに voice で 401」になります

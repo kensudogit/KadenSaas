@@ -1,4 +1,5 @@
 -- オートダイヤラー / IVR 自動架電
+-- ★ 適用済み環境では checksum を変えない（Flyway validate）。冪等化は V19。
 
 alter table call_sessions
   add column if not exists conversation_mode text not null default 'operator';
@@ -50,24 +51,5 @@ create table if not exists auto_dialer_runs (
 create index if not exists auto_dialer_runs_campaign_idx
   on auto_dialer_runs (tenant_id, campaign_id, started_at desc);
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_policies
-     where schemaname = 'public'
-       and tablename = 'auto_dialer_runs'
-       and policyname = 'tenant_isolation'
-  ) then
-    perform app_enable_tenant_rls('auto_dialer_runs');
-  end if;
-end $$;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'auto_dialer_runs_tenant_id_uniq'
-  ) then
-    alter table auto_dialer_runs
-      add constraint auto_dialer_runs_tenant_id_uniq unique (tenant_id, id);
-  end if;
-end $$;
+select app_enable_tenant_rls('auto_dialer_runs');
+alter table auto_dialer_runs add constraint auto_dialer_runs_tenant_id_uniq unique (tenant_id, id);

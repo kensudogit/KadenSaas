@@ -109,6 +109,13 @@ export default function AutoDialerPage() {
       {error && (
         <div role="alert" style={{ color: "var(--danger)", marginBottom: 12 }}>
           {error}
+          {error.includes("Failed to fetch") || error.includes("fetch") ? (
+            <p style={{ fontSize: 13, marginTop: 8, color: "var(--muted)" }}>
+              api が起動していないか CORS 未設定の可能性があります。Railway の api に{" "}
+              <code>CORS_ORIGIN</code>（web の https URL）を設定し、Deploy ログで
+              Flyway / 起動成功を確認してください（<code>db/RAILWAY-FLYWAY.md</code>）。
+            </p>
+          ) : null}
           {error.includes("マイグレーション") || error.includes("データベース") ? (
             <p style={{ fontSize: 13, marginTop: 8, color: "var(--muted)" }}>
               Railway 本番: api に{" "}

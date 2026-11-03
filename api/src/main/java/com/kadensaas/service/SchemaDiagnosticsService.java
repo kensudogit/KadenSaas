@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SchemaDiagnosticsService {
 
     /** オートダイヤラーに必要な Flyway バージョン。 */
-    public static final int REQUIRED_FOR_AUTO_DIALER = 18;
+    public static final int REQUIRED_FOR_AUTO_DIALER = 19;
 
     public record Report(
         Integer flywayLatestVersion,
@@ -57,7 +57,7 @@ public class SchemaDiagnosticsService {
         if (version < REQUIRED_FOR_AUTO_DIALER) {
             issues.add("Flyway バージョンが " + version + " です（オートダイヤラーには "
                 + REQUIRED_FOR_AUTO_DIALER + " 以上が必要）");
-            actions.add("V18 入りの api を再デプロイ（Flyway が起動時に V17/V18 を適用）");
+            actions.add("最新 api を再デプロイ（Flyway V17〜V19。V18 checksum mismatch は db/RAILWAY-FLYWAY.md）");
             actions.add("api に DATABASE_MIGRATOR_URL（kaden_migrator）を設定");
         }
         if (!autoDialerRuns) {

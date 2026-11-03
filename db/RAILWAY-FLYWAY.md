@@ -1,7 +1,54 @@
-# Railway で Flyway（V18）を直す
+# Railway 本番トラブル（Flyway / CORS）
 
-オートダイヤラーで「マイグレーション（Flyway）の適用を確認してください」と出るとき、
-本番 DB に **V18（`auto_dialer_runs` 等）** が入っていません。
+## CORS で「Failed to fetch」
+
+ブラウザの Console に
+
+`No 'Access-Control-Allow-Origin' header`
+
+と出るとき、**api が落ちている**ことが多いです（CORS 設定以前に Tomcat が起動していない）。
+Deploy ログで `Application run failed` / Flyway を先に確認してください。
+
+api が起動している場合は **api** の Variables:
+
+```env
+CORS_ORIGIN=https://web-production-7e530.up.railway.app
+```
+
+（web の公開 URL を **https 付き・末尾スラッシュなし**で。複数ならカンマ区切り）
+
+---
+
+## Flyway V18 checksum mismatch
+
+ログ例:
+
+```text
+Migration checksum mismatch for migration version 18
+-> Applied to database : -62650964
+-> Resolved locally    : -1663396168
+```
+
+**原因:** すでに Railway に適用された V18 SQL をリポジトリで書き換えた。
+**対応:** リポジトリは V18 を元に戻し、追加変更は **V19** に置く（本リポジトリの現行構成）。
+そのうえで **api を Redeploy** する。
+
+まだ validate で落ちる場合のみ、Postgres で checksum を合わせる:
+
+```sql
+UPDATE flyway_schema_history
+   SET checksum = -62650964
+ WHERE version = '18';
+```
+
+（値は Deploy ログの `Applied to database` の行を使う）
+
+---
+
+## オートダイヤラーの DB エラー
+
+本番 DB に **V18（`auto_dialer_runs` 等）** が入っていないとき、
+「マイグレーション（Flyway）の適用を確認してください」と出ます。
 
 ## 1. api の Deploy ログ
 
