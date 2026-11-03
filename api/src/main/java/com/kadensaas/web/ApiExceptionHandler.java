@@ -5,6 +5,8 @@ import java.util.Map;
 import com.kadensaas.service.PhoneNumbers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -31,6 +33,29 @@ public class ApiExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> badRequest(IllegalArgumentException e) {
         return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> conflict(IllegalStateException e) {
+        log.warn("前提条件を満たしていません: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(Map.of("error", "unavailable", "message", e.getMessage()));
+    }
+
+    @ExceptionHandler(EmptyResultDataAccessException.class)
+    public ResponseEntity<Map<String, String>> notFound(EmptyResultDataAccessException e) {
+        log.debug("対象が見つかりません", e);
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(Map.of("error", "not_found", "message", "対象が見つかりません"));
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    public ResponseEntity<Map<String, String>> dataAccess(DataAccessException e) {
+        log.error("DB エラー", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(Map.of(
+                "error", "internal_error",
+                "message", "データベースエラーです。マイグレーション（Flyway）の適用を確認してください"));
     }
 
     @ExceptionHandler(PhoneNumbers.InvalidNumberException.class)

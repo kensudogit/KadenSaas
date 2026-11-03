@@ -45,6 +45,9 @@ public class AutoDialerController {
 
     @PostMapping("/runs")
     public AutoDialerService.RunView start(@RequestBody StartRequest req) {
+        if (req == null || req.campaignId() == null) {
+            throw new IllegalArgumentException("campaignId が必要です");
+        }
         return autoDialer.start(
             CurrentUser.require(), req.campaignId(), req.conversationMode());
     }

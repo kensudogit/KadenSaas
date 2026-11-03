@@ -58,7 +58,7 @@ public class AutoDialerService {
                    r.interval_seconds, r.dials_attempted, r.last_call_session_id
               from auto_dialer_runs r
               join campaigns c on c.id = r.campaign_id and c.tenant_id = r.tenant_id
-             where r.status in ('running', 'paused')
+             where r.tenant_id = ? and r.status in ('running', 'paused')
              order by r.started_at desc
             """,
             (rs, n) -> new RunView(
@@ -75,6 +75,7 @@ public class AutoDialerService {
 
     @Transactional
     public RunView start(AuthUser user, UUID campaignId, String conversationMode) {
+        voice.requireConfigured();
         var camp = jdbc.queryForMap("""
             select id, name, auto_dialer_enabled, auto_dialer_interval_seconds
               from campaigns where id = ? and tenant_id = ?

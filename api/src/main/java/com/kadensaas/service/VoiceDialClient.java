@@ -29,11 +29,16 @@ public class VoiceDialClient {
         this.http = RestClient.create();
     }
 
-    public void dialQueuedSession(AuthUser user, UUID callSessionId) {
+    public void requireConfigured() {
         if (voiceBaseUrl.isBlank()) {
             throw new IllegalStateException(
-                "KADEN_VOICE_BASE_URL が未設定です。オートダイヤラーは voice へ接続できません");
+                "voice の URL が未設定です。api に KADEN_VOICE_BASE_URL（または VOICE_BASE_URL）"
+                    + " を voice サービスの公開 URL で設定してください");
         }
+    }
+
+    public void dialQueuedSession(AuthUser user, UUID callSessionId) {
+        requireConfigured();
         String token = jwt.issue(user);
         String url = voiceBaseUrl.replaceAll("/$", "")
             + "/internal/calls/" + callSessionId + "/dial";

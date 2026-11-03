@@ -94,8 +94,11 @@ async function request<T>(
   const body = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
+    const b = body as { message?: string; error?: string } | null;
     const message =
-      (body && (body.message || body.error)) ?? `エラー (${response.status})`;
+      (b?.message && b.message !== b.error ? b.message : null) ??
+      b?.error ??
+      `エラー (${response.status})`;
     throw new ApiError(response.status, body, message);
   }
   return body as T;

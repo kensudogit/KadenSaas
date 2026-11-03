@@ -46,7 +46,14 @@ export default function AutoDialerPage() {
         ? `発信: ${r.companyName ?? ""} ${r.e164 ?? ""} — ${r.message}`
         : `スキップ (${r.skipReason ?? "—"}): ${r.message}`;
       setLog((prev) => [line, ...prev].slice(0, 30));
-      if (r.skipReason === "queue_empty" || r.skipReason === "not_running") {
+      if (r.skipReason === "voice_dial_failed") {
+        setError(r.message);
+      }
+      if (
+        r.skipReason === "queue_empty" ||
+        r.skipReason === "not_running" ||
+        r.skipReason === "voice_dial_failed"
+      ) {
         setRunning(false);
         if (timerRef.current) clearInterval(timerRef.current);
       }
@@ -67,10 +74,13 @@ export default function AutoDialerPage() {
 
   async function startRun() {
     const camp = campaigns[0];
-    if (!camp) return;
+    if (!camp?.id) {
+      setError("キャンペーン ID が取得できません。再読込してください。");
+      return;
+    }
     setError(null);
     try {
-      const run = await autoDialer.start(camp.id, mode);
+      const run = await autoDialer.start(String(camp.id), mode);
       setRunId(run.id);
       setIntervalSec(run.intervalSeconds);
       setRunning(true);
