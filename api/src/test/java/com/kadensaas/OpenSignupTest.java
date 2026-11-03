@@ -109,7 +109,7 @@ class OpenSignupTest extends AbstractIntegrationTest {
         var user = new AuthUser(userId, tenantId, "admin@dialco.example",
             AuthUser.Role.ADMIN);
 
-        var result = callService.requestDial(user, phoneId, null, null);
+        var result = callService.requestDial(user, phoneId, null, null, false);
 
         assertThat(result.accepted())
             .as("誰でも登録できる以上、ここが通ると誰でも迷惑電話をかけられる。"

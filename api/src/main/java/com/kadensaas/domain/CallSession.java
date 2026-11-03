@@ -82,6 +82,10 @@ public class CallSession {
     @Column(name = "duration_seconds")
     private Integer durationSeconds;
 
+    /** voice サービスが LLM＋TTS で会話する架電。 */
+    @Column(name = "ai_agent_mode", nullable = false)
+    private boolean aiAgentMode;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 }

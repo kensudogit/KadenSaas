@@ -24,6 +24,9 @@ public class Campaign {
     private String script;
     private String status;
 
+    @Column(name = "ai_agent_enabled", nullable = false)
+    private boolean aiAgentEnabled;
+
     @Column(name = "starts_at")
     private OffsetDateTime startsAt;
 

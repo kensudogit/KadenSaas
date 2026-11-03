@@ -24,6 +24,8 @@ dependencies = [
     #   ずれると DNC の照合が静かに素通りする
     "phonenumbers==9.0.38",
     "httpx==0.28.1",
+    # 3.13 以降で stdlib audioop が無い環境向け（μ-law 変換）
+    "audioop-lts==0.2.2",
     # ★ Windows と slim なコンテナには tz データベースが無く、
     #   ZoneInfo("Asia/Tokyo") が ZoneInfoNotFoundError で落ちる。
     #   架電可能時間の判定がタイムゾーンに依存するので、

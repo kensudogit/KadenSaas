@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/calls")
 public class CallController {
 
-    public record DialRequest(@NotNull UUID phoneId, UUID campaignId, UUID callTargetId) {
+    public record DialRequest(@NotNull UUID phoneId, UUID campaignId, UUID callTargetId,
+                              Boolean aiAgentMode) {
     }
 
     public record DispositionRequest(@NotNull String code, String note) {
@@ -49,8 +50,9 @@ public class CallController {
      */
     @PostMapping
     public ResponseEntity<?> dial(@RequestBody DialRequest req) {
+        boolean aiMode = Boolean.TRUE.equals(req.aiAgentMode());
         var result = callService.requestDial(
-            CurrentUser.require(), req.phoneId(), req.campaignId(), req.callTargetId());
+            CurrentUser.require(), req.phoneId(), req.campaignId(), req.callTargetId(), aiMode);
 
         if (!result.accepted()) {
             return ResponseEntity.ok(Map.of(

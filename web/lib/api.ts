@@ -181,10 +181,20 @@ export interface DialResult {
 }
 
 export const calls = {
-  dial: (phoneId: string, campaignId?: string, callTargetId?: string) =>
+  dial: (
+    phoneId: string,
+    campaignId?: string,
+    callTargetId?: string,
+    aiAgentMode?: boolean,
+  ) =>
     api<DialResult>("/api/v1/calls", {
       method: "POST",
-      body: JSON.stringify({ phoneId, campaignId, callTargetId }),
+      body: JSON.stringify({
+        phoneId,
+        campaignId,
+        callTargetId,
+        aiAgentMode: aiAgentMode === true,
+      }),
     }),
 
   // ★ 実際に鳴らすのは voice。api が作った queued の行を渡す
@@ -209,6 +219,11 @@ export const calls = {
         isConnected: boolean;
       }>
     >("/api/v1/calls/dispositions"),
+
+  get: (callSessionId: string) =>
+    api<{ id: string; dialState: string; aiAgentMode?: boolean }>(
+      `/api/v1/calls/${callSessionId}`,
+    ),
 };
 
 // ---------------------------------------------------------------- KPI

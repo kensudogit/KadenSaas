@@ -107,14 +107,15 @@ async def voice(request: Request) -> Response:
 
     # ★ 双方向の音声を Media Stream に流す。track="both_tracks" にしないと
     #   相手の声しか取れず、担当者の話した割合が計算できない
+    # ★ Connect + Stream で双方向。Start だけだと相手への AI 音声を
+    #   WebSocket から流せない。Connect は WS が繋がるまで待つ。
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Start>
+  <Connect>
     <Stream url="{public_wss('/media')}" track="both_tracks">
       <Parameter name="call_session_id" value="{call_session_id}" />
     </Stream>
-  </Start>
-  <Pause length="3600"/>
+  </Connect>
 </Response>"""
     return Response(content=twiml, media_type="application/xml")
 

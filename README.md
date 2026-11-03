@@ -413,6 +413,19 @@ RLS 対象のテーブルには触れない。
 トランザクションを越えて値が残る形（`SET` や接続初期化フック）にしてはいけない。
 残ると、その接続を拾った別の処理が前のテナントとして動く。
 
+### AI 自動架電
+
+Web の **AI 架電**（`/ai-outbound`）から、`aiAgentMode: true` で発信要求すると
+`call_sessions.ai_agent_mode` が立ち、voice が Media Stream 上で次のループを回す。
+
+1. 相手の発話（inbound）→ ASR（`ASR_PROVIDER=deepgram` 等）
+2. キャンペーン `script` を指示に LLM が応答（`LLM_API_KEY` / `LLM_MODEL`）
+3. TTS（`TTS_PROVIDER=openai` と `TTS_API_KEY`）→ μ-law を Twilio へ返送
+
+TwiML は双方向の `<Connect><Stream>` を使う（`voice/app/telephony/routes.py`）。
+Twilio・`PUBLIC_BASE_URL` / `PUBLIC_WSS_URL`・Deepgram・Anthropic・OpenAI TTS を
+揃えたうえで、従来どおり DialingGate → queued → `/internal/calls/{id}/dial` の順で試す。
+
 ---
 
 ## サービスの境界

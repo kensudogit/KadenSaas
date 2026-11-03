@@ -35,18 +35,23 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from uuid import UUID
 
 from .. import logger
 from ..config import (
+    LLM_MODEL,
     MIN_UTTERANCE_MS,
     REDIS_URL,
     SILENCE_THRESHOLD_MS,
 )
 from ..db.engine import system_tx, tenant_tx
+from .ai_agent import OutboundAiAgent, generate_reply
 from .asr import get_transcriber
 from .audio import UtteranceSplitter
+from .outbound_playback import play_ulaw_on_stream
+from .tts import get_synthesizer
 
 # ★ 1 トラックあたりに待たせてよい発話の数。
 #   3 分の通話で発話は数十個。ASR が一時的に詰まっても数個ぶん吸収できれば
@@ -68,16 +73,25 @@ class _TrackState:
     worker: asyncio.Task | None = None
 
 
+SendJsonFn = Callable[[str], Awaitable[None]]
+
+
 @dataclass
 class CallAudioSession:
     call_session_id: UUID
     tenant_id: UUID
+    ai_agent_mode: bool = False
     started_at: float = field(default_factory=time.monotonic)
 
     _tracks: dict[str, _TrackState] = field(default_factory=dict, init=False)
     _segments: list[dict] = field(default_factory=list, init=False)
     _redis: object | None = field(default=None, init=False)
     _dropped: int = field(default=0, init=False)
+    _ai_agent: OutboundAiAgent | None = field(default=None, init=False)
+    _stream_sid: str = field(default="", init=False)
+    _send_json: SendJsonFn | None = field(default=None, init=False)
+    _speak_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+    _opening_task: asyncio.Task | None = field(default=None, init=False)
 
     # ------------------------------------------------------------ 生成
 
@@ -95,9 +109,51 @@ class CallAudioSession:
         if row is None:
             raise ValueError(f"通話が見つかりません: {call_session_id}")
 
-        session = cls(call_session_id=call_session_id, tenant_id=row["tenant_id"])
+        tenant_id = row["tenant_id"]
+        ai_mode = False
+        campaign_script = ""
+        campaign_name = ""
+        async with tenant_tx(tenant_id) as conn:
+            meta = await conn.fetchrow(
+                """
+                select cs.ai_agent_mode,
+                       coalesce(c.script, '') as campaign_script,
+                       coalesce(c.name, '') as campaign_name
+                from call_sessions cs
+                left join campaigns c
+                  on c.tenant_id = cs.tenant_id and c.id = cs.campaign_id
+                where cs.tenant_id = $1 and cs.id = $2
+                """,
+                tenant_id,
+                call_session_id,
+            )
+        if meta is not None:
+            ai_mode = bool(meta["ai_agent_mode"])
+            campaign_script = meta["campaign_script"] or ""
+            campaign_name = meta["campaign_name"] or ""
+
+        session = cls(
+            call_session_id=call_session_id,
+            tenant_id=tenant_id,
+            ai_agent_mode=ai_mode,
+        )
+        if ai_mode:
+            session._ai_agent = OutboundAiAgent(
+                campaign_name=campaign_name,
+                campaign_script=campaign_script,
+            )
         session._redis = await session._connect_redis()
         return session
+
+    def attach_outbound(self, stream_sid: str, send_json: SendJsonFn) -> None:
+        """Twilio へ AI 音声を流すための送信口を接続する。"""
+        self._stream_sid = stream_sid
+        self._send_json = send_json
+        if self.ai_agent_mode and self._ai_agent is not None and self._opening_task is None:
+            self._opening_task = asyncio.create_task(
+                self._play_opening(),
+                name=f"ai-open:{self.call_session_id}",
+            )
 
     async def _connect_redis(self):
         try:
@@ -212,6 +268,61 @@ class CallAudioSession:
         }
         self._segments.append(segment)
         await self._publish(segment)
+
+        if self.ai_agent_mode and track == "inbound" and self._ai_agent is not None:
+            asyncio.create_task(
+                self._on_customer_speech(text),
+                name=f"ai-reply:{self.call_session_id}",
+            )
+
+    async def _on_customer_speech(self, text: str) -> None:
+        if self._ai_agent is None:
+            return
+        try:
+            reply = await generate_reply(self._ai_agent, text)
+        except Exception as e:  # noqa: BLE001
+            logger.warn("AI 応答の生成に失敗しました", error=str(e))
+            return
+        if reply:
+            await self._speak_agent_text(reply)
+
+    async def _play_opening(self) -> None:
+        if self._ai_agent is None:
+            return
+        line = self._ai_agent.opening_line()
+        if line:
+            await self._speak_agent_text(line)
+
+    async def _speak_agent_text(self, text: str) -> None:
+        async with self._speak_lock:
+            elapsed_ms = int((time.monotonic() - self.started_at) * 1000)
+            segment = {
+                "speaker": "agent",
+                "text": text,
+                "start_ms": elapsed_ms,
+                "end_ms": elapsed_ms,
+            }
+            self._segments.append(segment)
+            await self._publish(segment)
+
+            synth = get_synthesizer()
+            try:
+                ulaw = await synth.synthesize_ulaw(text)
+            except Exception as e:  # noqa: BLE001
+                logger.warn("TTS に失敗しました", error=str(e))
+                return
+
+            if not ulaw or self._send_json is None or not self._stream_sid:
+                return
+
+            outbound = self._tracks.get("outbound")
+            if outbound is not None:
+                outbound.talk_ms += len(ulaw) // 8
+
+            try:
+                await play_ulaw_on_stream(self._send_json, self._stream_sid, ulaw)
+            except Exception as e:  # noqa: BLE001
+                logger.warn("AI 音声の送信に失敗しました", error=str(e))
 
     async def _publish(self, segment: dict) -> None:
         """画面へリアルタイムに流す。失敗しても通話は続ける。"""
@@ -363,12 +474,13 @@ class CallAudioSession:
             await conn.execute(
                 """
                 insert into ai_analyses (tenant_id, call_session_id, transcript_id, model, status)
-                values ($1, $2, $3, 'pending', 'pending')
+                values ($1, $2, $3, $4, 'pending')
                 on conflict (tenant_id, call_session_id) do nothing
                 """,
                 self.tenant_id,
                 self.call_session_id,
                 transcript_id,
+                LLM_MODEL,
             )
 
         logger.info(

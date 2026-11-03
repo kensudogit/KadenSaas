@@ -145,6 +145,16 @@ LLM_MODEL = _optional("LLM_MODEL", "claude-opus-5")
 #   途中で切れて再試行になり、かえって高くつく
 LLM_MAX_TOKENS = _int("LLM_MAX_TOKENS", 16000)
 
+TTS_PROVIDER = _optional("TTS_PROVIDER", "null")
+TTS_API_KEY = _optional("TTS_API_KEY")
+TTS_MODEL = _optional("TTS_MODEL", "gpt-4o-mini-tts")
+TTS_VOICE = _optional("TTS_VOICE", "nova")
+
+if TTS_PROVIDER not in ("null", "openai"):
+    _problems.append(f"TTS_PROVIDER は null / openai のいずれか: {TTS_PROVIDER}")
+if TTS_PROVIDER == "openai" and not TTS_API_KEY:
+    _problems.append("TTS_PROVIDER=openai ですが TTS_API_KEY が空です")
+
 # ---------------------------------------------------------------- 保管
 
 S3_ENDPOINT = _optional("S3_ENDPOINT")

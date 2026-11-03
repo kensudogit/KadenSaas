@@ -11,7 +11,7 @@ import com.kadensaas.tenant.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.Autowired;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -103,7 +103,7 @@ class CallCenterAssistTest extends AbstractIntegrationTest {
 
     @Test
     @DisplayName("語彙が重ならなくても請求意図なら billing ナレッジを参照できる")
-    void intentAlignedWhenLexicalMisses() {
+    void intentAlignedWhenLexicalMisses() throws Exception {
         String token = readyTenant("cc-align", "着信整合社");
 
         var response = mvc.perform(post("/api/v1/call-center/assist")

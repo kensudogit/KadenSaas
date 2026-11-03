@@ -44,6 +44,8 @@ class DialingGateTest extends AbstractIntegrationTest {
         UUID customerId = createCustomer(tenantId, "対象会社");
         UUID phoneId = createPhone(tenantId, customerId, e164);
         configureTelephony(tenantId, "+81300000000", true);
+        // ★ 実行日が祝日だと holiday で止まり、関門以外のテストが落ちる
+        admin().update("update tenants set exclude_holidays = false where id = ?", tenantId);
 
         var user = new AuthUser(userId, tenantId, "op@example.com",
             AuthUser.Role.OPERATOR);
@@ -56,7 +58,7 @@ class DialingGateTest extends AbstractIntegrationTest {
     void allowsWhenEverythingIsFine() {
         var f = setup("+81312340001");
 
-        var result = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var result = callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         assertThat(result.accepted())
             .as("blocked=%s / %s", result.blockedReason(), result.message())
@@ -73,7 +75,7 @@ class DialingGateTest extends AbstractIntegrationTest {
             values (?, '+81312340002', '電話口で断られた', 'customer_request')
             """, f.tenantId());
 
-        var result = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var result = callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         assertThat(result.accepted())
             .as("DNC の相手に発信できたら、この製品は使えない")
@@ -90,7 +92,7 @@ class DialingGateTest extends AbstractIntegrationTest {
             values (?, '+81312340003', '拒否', 'customer_request')
             """, f.tenantId());
 
-        callService.requestDial(f.user(), f.phoneId(), null, null);
+        callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         var row = admin().queryForMap("""
             select dial_state, blocked_reason from call_sessions
@@ -113,7 +115,7 @@ class DialingGateTest extends AbstractIntegrationTest {
              where id = ?
             """, f.tenantId());
 
-        var result = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var result = callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         assertThat(result.accepted()).isFalse();
         assertThat(result.blockedReason()).isEqualTo("outside_hours");
@@ -130,7 +132,7 @@ class DialingGateTest extends AbstractIntegrationTest {
         admin().update("update tenants set calling_weekdays = ? where id = ?",
             new int[] {other}, f.tenantId());
 
-        var result = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var result = callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         assertThat(result.accepted()).isFalse();
         assertThat(result.blockedReason()).isEqualTo("outside_weekday");
@@ -141,10 +143,10 @@ class DialingGateTest extends AbstractIntegrationTest {
     void blocksDoubleDial() {
         var f = setup("+81312340006");
 
-        var first = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var first = callService.requestDial(f.user(), f.phoneId(), null, null, false);
         assertThat(first.accepted()).isTrue();
 
-        var second = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var second = callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         assertThat(second.accepted())
             .as("同じ相手に 2 本同時にかかると、相手には迷惑電話に見える")
@@ -156,14 +158,14 @@ class DialingGateTest extends AbstractIntegrationTest {
     @DisplayName("通話が終われば同じ番号に再度かけられる")
     void allowsAfterCallCompleted() {
         var f = setup("+81312340007");
-        callService.requestDial(f.user(), f.phoneId(), null, null);
+        callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         admin().update("""
             update call_sessions set dial_state = 'completed', ended_at = now()
              where tenant_id = ? and to_e164 = '+81312340007'
             """, f.tenantId());
 
-        var again = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var again = callService.requestDial(f.user(), f.phoneId(), null, null, false);
         assertThat(again.accepted()).isTrue();
     }
 
@@ -173,7 +175,7 @@ class DialingGateTest extends AbstractIntegrationTest {
         var f = setup("+81312340008");
         configureTelephony(f.tenantId(), "+81300000000", false);
 
-        var result = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var result = callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         assertThat(result.accepted()).isFalse();
         assertThat(result.blockedReason()).isEqualTo("dialing_disabled");
@@ -185,7 +187,7 @@ class DialingGateTest extends AbstractIntegrationTest {
         var f = setup("+81312340009");
         admin().update("delete from tenant_telephony where tenant_id = ?", f.tenantId());
 
-        var result = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var result = callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         assertThat(result.accepted())
             .as("設定が無いまま通すと、from が null のまま Twilio に渡る")
@@ -197,7 +199,7 @@ class DialingGateTest extends AbstractIntegrationTest {
     @DisplayName("★ 架電結果に DO_NOT_CALL を選ぶと、その場で拒否リストに入る")
     void dispositionDoNotCallRegistersDnc() {
         var f = setup("+81312340010");
-        var result = callService.requestDial(f.user(), f.phoneId(), null, null);
+        var result = callService.requestDial(f.user(), f.phoneId(), null, null, false);
 
         callService.recordDisposition(f.user(), result.callSessionId(),
             "DO_NOT_CALL", "電話口で断られた");

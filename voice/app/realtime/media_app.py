@@ -28,6 +28,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from .. import logger
 from ..config import TELEPHONY_ENABLED
 from ..db.engine import close_pool, init_pool
+from .outbound_playback import websocket_sender
 from .session import CallAudioSession
 
 media_app = FastAPI(title="KadenSaas media")
@@ -86,10 +87,12 @@ async def media(ws: WebSocket) -> None:
                     return
 
                 session = await CallAudioSession.open(UUID(call_session_id))
+                session.attach_outbound(stream_sid, websocket_sender(ws))
                 logger.info(
                     "音声ストリームを開始しました",
                     stream_sid=stream_sid,
                     call_session_id=call_session_id,
+                    ai_agent=session.ai_agent_mode,
                 )
 
             elif event == "media" and session is not None:
