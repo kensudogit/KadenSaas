@@ -132,6 +132,7 @@ export default function AiOutboundPage() {
         campaignId || undefined,
         item.target.target_id,
         true,
+        "ai_agent",
       );
 
       if (!result.accepted) {

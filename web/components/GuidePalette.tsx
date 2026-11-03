@@ -349,8 +349,22 @@ export default function GuidePalette() {
                   <a href="/ai-outbound" style={linkStyle}>
                     AI 架電
                   </a>
-                  を開く。初回はサンプル（03-1234-52xx）が自動登録され、一覧と
-                  スクリプトが表示されます。「次の 1 件を取る」→「AI で発信する」
+                  （03-1234-52xx）
+                </>,
+                <>
+                  <b>オートダイヤラー</b> —{" "}
+                  <a href="/auto-dialer" style={linkStyle}>
+                    オートダイヤル
+                  </a>
+                  でキューを順次発信（03-1234-53xx）。api に{" "}
+                  <Code inline>KADEN_VOICE_BASE_URL</Code> が必要
+                </>,
+                <>
+                  <b>IVR 自動架電</b> —{" "}
+                  <a href="/ivr-outbound" style={linkStyle}>
+                    IVR 架電
+                  </a>
+                  （Gather メニュー 1/2/9、03-1234-54xx）
                 </>,
                 <>
                   <b>コールセンターを確認</b> — ナビの
@@ -370,7 +384,8 @@ export default function GuidePalette() {
               items={[
                 <>
                   <b>発信の関門は人架電と同じ。</b> api の DialingGate → queued →
-                  voice が Twilio 発信。<Code inline>aiAgentMode</Code> の通話だけ
+                  voice が Twilio 発信。
+                  <Code inline>conversation_mode=ai_agent</Code> の通話だけ
                   voice が相手発話 → LLM → TTS のループを回します
                 </>,
                 <>
@@ -393,6 +408,56 @@ export default function GuidePalette() {
                 <>
                   <b>番号帯</b> — AI デモ専用は 03-1234-52xx、従来サンプルは
                   03-1234-5xxx。いずれも架空です
+                </>,
+              ]}
+            />
+          </Card>
+
+          <SectionLabel>オートダイヤラー</SectionLabel>
+          <Card>
+            <Steps
+              items={[
+                <>
+                  <b>プログレッシブ（1 本ずつ）。</b> 通話が終わるまで次をかけない。
+                  <Code inline>auto_dialer_runs</Code> の tick が reserve → DialingGate →
+                  queued → voice dial まで一気通貫
+                </>,
+                <>
+                  <b>サンプル</b> —{" "}
+                  <Code inline>/api/v1/auto-dialer/seed-demo</Code> または画面の自動登録。
+                  キャンペーン「サンプル: オートダイヤラー」
+                </>,
+                <>
+                  <b>会話モード</b> — 開始時に <Code inline>operator</Code> /{" "}
+                  <Code inline>ai_agent</Code> / <Code inline>ivr</Code> を選べます。
+                  IVR モードがデモ向き
+                </>,
+                <>
+                  <b>必須設定</b> — api の{" "}
+                  <Code inline>KADEN_VOICE_BASE_URL</Code>（Railway では voice-web の URL）。
+                  未設定だと tick が voice 発信で失敗します
+                </>,
+              ]}
+            />
+          </Card>
+
+          <SectionLabel>IVR 自動架電</SectionLabel>
+          <Card>
+            <Steps
+              items={[
+                <>
+                  <b>応答後</b> — voice の <Code inline>/twilio/voice</Code> が{" "}
+                  <Code inline>conversation_mode=ivr</Code> を見て Gather TwiML を返します。
+                  相手の 1 桁入力は <Code inline>/twilio/ivr/gather</Code>
+                </>,
+                <>
+                  <b>メニュー</b> — キャンペーンの{" "}
+                  <Code inline>ivr_welcome_text</Code> と{" "}
+                  <Code inline>ivr_menu_json</Code>（1=資料、2=担当、9=終了）
+                </>,
+                <>
+                  <b>サンプル</b> — IVR 架電画面で自動登録（03-1234-54xx）。
+                  オートダイヤラーから IVR モードで連続発信も可能
                 </>,
               ]}
             />
@@ -464,6 +529,16 @@ export default function GuidePalette() {
                   <b>AI 架電の一覧が空</b> — api が未デプロイ（V17 以降）か
                   401。ブラウザのネットワークで{" "}
                   <Code inline>/api/v1/ai-outbound/overview</Code> を確認
+                </>,
+                <>
+                  <b>オートダイヤラーが voice で失敗</b> —{" "}
+                  <Code inline>KADEN_VOICE_BASE_URL</Code> と JWT_SECRET の一致、
+                  電話設定の診断を確認
+                </>,
+                <>
+                  <b>IVR でメニューが流れない</b> — 通話の{" "}
+                  <Code inline>conversation_mode</Code> が ivr か、
+                  キャンペーンで <Code inline>ivr_enabled</Code> とメニュー JSON があるか
                 </>,
               ]}
             />

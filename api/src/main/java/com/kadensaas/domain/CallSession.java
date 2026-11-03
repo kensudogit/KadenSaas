@@ -86,6 +86,10 @@ public class CallSession {
     @Column(name = "ai_agent_mode", nullable = false)
     private boolean aiAgentMode;
 
+    /** operator / ai_agent / ivr */
+    @Column(name = "conversation_mode", nullable = false)
+    private String conversationMode = "operator";
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 }

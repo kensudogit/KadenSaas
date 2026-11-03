@@ -8,6 +8,7 @@ import com.kadensaas.domain.CallSession;
 import com.kadensaas.repository.CallSessionRepository;
 import com.kadensaas.repository.DispositionCodeRepository;
 import com.kadensaas.service.CallService;
+import com.kadensaas.service.ConversationMode;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -24,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
 public class CallController {
 
     public record DialRequest(@NotNull UUID phoneId, UUID campaignId, UUID callTargetId,
-                              Boolean aiAgentMode) {
+                              Boolean aiAgentMode, String conversationMode) {
     }
 
     public record DispositionRequest(@NotNull String code, String note) {
@@ -50,9 +51,9 @@ public class CallController {
      */
     @PostMapping
     public ResponseEntity<?> dial(@RequestBody DialRequest req) {
-        boolean aiMode = Boolean.TRUE.equals(req.aiAgentMode());
+        String mode = resolveConversationMode(req);
         var result = callService.requestDial(
-            CurrentUser.require(), req.phoneId(), req.campaignId(), req.callTargetId(), aiMode);
+            CurrentUser.require(), req.phoneId(), req.campaignId(), req.callTargetId(), mode);
 
         if (!result.accepted()) {
             return ResponseEntity.ok(Map.of(
@@ -86,6 +87,14 @@ public class CallController {
     }
 
     /** 結果コードの一覧。画面のボタンをここから作らせる。 */
+    private static String resolveConversationMode(DialRequest req) {
+        if (req.conversationMode() != null && !req.conversationMode().isBlank()) {
+            return ConversationMode.normalize(req.conversationMode());
+        }
+        return Boolean.TRUE.equals(req.aiAgentMode())
+            ? ConversationMode.AI_AGENT : ConversationMode.OPERATOR;
+    }
+
     @GetMapping("/dispositions")
     public Object dispositionCodes() {
         return dispositions.findAll().stream()

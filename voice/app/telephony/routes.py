@@ -27,6 +27,7 @@ from fastapi.responses import PlainTextResponse
 from .. import logger
 from ..config import public_wss
 from ..db.engine import system_tx, tenant_tx
+from .ivr import digit_twiml, gather_twiml
 from .signature import SignatureError, verify
 
 router = APIRouter(prefix="/twilio", tags=["twilio"])
@@ -105,10 +106,15 @@ async def voice(request: Request) -> Response:
 
     call_session_id = request.query_params.get("call_session_id", "")
 
-    # ★ 双方向の音声を Media Stream に流す。track="both_tracks" にしないと
-    #   相手の声しか取れず、担当者の話した割合が計算できない
-    # ★ Connect + Stream で双方向。Start だけだと相手への AI 音声を
-    #   WebSocket から流せない。Connect は WS が繋がるまで待つ。
+    profile = await _voice_profile(call_session_id)
+    mode = profile.get("conversation_mode", "operator")
+
+    if mode == "ivr":
+        welcome = profile.get("ivr_welcome") or "お世話になっております。"
+        twiml = gather_twiml(call_session_id, welcome, profile.get("ivr_menu_json"))
+        return Response(content=twiml, media_type="application/xml")
+
+    # ★ Connect + Stream（AI / オペレーター）。IVR は Gather のみ。
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
@@ -118,6 +124,52 @@ async def voice(request: Request) -> Response:
   </Connect>
 </Response>"""
     return Response(content=twiml, media_type="application/xml")
+
+
+@router.post("/ivr/gather")
+async def ivr_gather(request: Request) -> Response:
+    """IVR の DTMF 入力。"""
+    try:
+        data = await _verified_form(request, "/twilio/ivr/gather")
+    except SignatureError as e:
+        logger.warn("署名検証に失敗（ivr/gather）", error=str(e))
+        return PlainTextResponse("forbidden", status_code=403)
+
+    call_session_id = request.query_params.get("call_session_id", "")
+    digits = data.get("Digits", "")
+    profile = await _voice_profile(call_session_id)
+    twiml = digit_twiml(digits, profile.get("ivr_menu_json"))
+    return Response(content=twiml, media_type="application/xml")
+
+
+async def _voice_profile(call_session_id: str) -> dict:
+    if not call_session_id:
+        return {}
+    async with system_tx() as conn:
+        row = await conn.fetchrow(
+            """
+            select cs.conversation_mode,
+                   coalesce(c.ivr_welcome_text, c.name, '') as ivr_welcome,
+                   c.ivr_menu_json
+              from call_sessions cs
+              left join campaigns c
+                on c.tenant_id = cs.tenant_id and c.id = cs.campaign_id
+             where cs.id = $1::uuid
+            """,
+            call_session_id,
+        )
+    if row is None:
+        return {}
+    menu = row["ivr_menu_json"]
+    if menu is not None and not isinstance(menu, str):
+        import json
+
+        menu = json.dumps(menu, ensure_ascii=False)
+    return {
+        "conversation_mode": row["conversation_mode"] or "operator",
+        "ivr_welcome": row["ivr_welcome"],
+        "ivr_menu_json": menu,
+    }
 
 
 @router.post("/status")

@@ -429,6 +429,13 @@ TwiML は双方向の `<Connect><Stream>` を使う（`voice/app/telephony/route
 Twilio・`PUBLIC_BASE_URL` / `PUBLIC_WSS_URL`・Deepgram・Anthropic・OpenAI TTS を
 揃えたうえで、従来どおり DialingGate → queued → `/internal/calls/{id}/dial` の順で試す。
 
+### オートダイヤラー / IVR 自動架電
+
+- **オートダイヤラー** — `/auto-dialer`。`auto_dialer_runs` の tick がキューを 1 件ずつ
+  `CallService` → `VoiceDialClient`（`KADEN_VOICE_BASE_URL`）まで実行。サンプル 03-1234-53xx。
+- **IVR** — `conversation_mode=ivr` の通話は voice が Gather TwiML（`/twilio/ivr/gather`）。
+  画面 `/ivr-outbound`、サンプル 03-1234-54xx。
+
 ---
 
 ## サービスの境界

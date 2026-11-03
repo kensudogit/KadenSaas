@@ -121,6 +121,23 @@ public final class PermissionCatalog {
             "03-1234-52xx の架空番号。冪等",
             EVERYONE, "POST", "/api/v1/ai-outbound/seed-demo"),
 
+        new Capability("auto_dialer.run", "オートダイヤラーを操作する",
+            "キューを順次自動発信。KADEN_VOICE_BASE_URL が必要",
+            EVERYONE, "POST", "/api/v1/auto-dialer/runs",
+            "{\"campaignId\":\"00000000-0000-0000-0000-000000000001\"}"),
+
+        new Capability("auto_dialer.seed", "オートダイヤラー用サンプルを登録",
+            "03-1234-53xx",
+            EVERYONE, "POST", "/api/v1/auto-dialer/seed-demo"),
+
+        new Capability("ivr_outbound.overview", "IVR 架電デモ一覧",
+            "Gather メニュー付きキャンペーン",
+            EVERYONE, "GET", "/api/v1/ivr-outbound/overview"),
+
+        new Capability("ivr_outbound.seed", "IVR 架電デモを登録",
+            "03-1234-54xx",
+            EVERYONE, "POST", "/api/v1/ivr-outbound/seed-demo"),
+
         new Capability("callcenter.inquiries", "着信受付履歴を見る",
             "オペレーター支援の受付履歴。音声は学習に使わない",
             EVERYONE, "GET", "/api/v1/call-center/inquiries"),

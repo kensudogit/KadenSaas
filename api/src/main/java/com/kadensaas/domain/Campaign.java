@@ -27,6 +27,21 @@ public class Campaign {
     @Column(name = "ai_agent_enabled", nullable = false)
     private boolean aiAgentEnabled;
 
+    @Column(name = "auto_dialer_enabled", nullable = false)
+    private boolean autoDialerEnabled;
+
+    @Column(name = "auto_dialer_interval_seconds", nullable = false)
+    private int autoDialerIntervalSeconds = 45;
+
+    @Column(name = "ivr_enabled", nullable = false)
+    private boolean ivrEnabled;
+
+    @Column(name = "ivr_welcome_text")
+    private String ivrWelcomeText;
+
+    @Column(name = "ivr_menu_json", columnDefinition = "jsonb")
+    private String ivrMenuJson;
+
     @Column(name = "starts_at")
     private OffsetDateTime startsAt;
 

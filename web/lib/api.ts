@@ -186,6 +186,7 @@ export const calls = {
     campaignId?: string,
     callTargetId?: string,
     aiAgentMode?: boolean,
+    conversationMode?: "operator" | "ai_agent" | "ivr",
   ) =>
     api<DialResult>("/api/v1/calls", {
       method: "POST",
@@ -194,6 +195,7 @@ export const calls = {
         campaignId,
         callTargetId,
         aiAgentMode: aiAgentMode === true,
+        conversationMode,
       }),
     }),
 
@@ -256,6 +258,69 @@ export const aiOutbound = {
       created: boolean;
       message: string;
     }>("/api/v1/ai-outbound/seed-demo", { method: "POST" }),
+};
+
+export const autoDialer = {
+  campaigns: () =>
+    api<
+      Array<{
+        id: string;
+        name: string;
+        interval_seconds: number;
+        pending_count: number;
+      }>
+    >("/api/v1/auto-dialer/campaigns"),
+
+  seedDemo: () =>
+    api<{
+      overview: AiOutboundOverview;
+      created: boolean;
+      message: string;
+    }>("/api/v1/auto-dialer/seed-demo", { method: "POST" }),
+
+  start: (campaignId: string, conversationMode: "operator" | "ai_agent" | "ivr") =>
+    api<{
+      id: string;
+      campaignId: string;
+      campaignName: string;
+      conversationMode: string;
+      status: string;
+      intervalSeconds: number;
+      dialsAttempted: number;
+    }>("/api/v1/auto-dialer/runs", {
+      method: "POST",
+      body: JSON.stringify({ campaignId, conversationMode }),
+    }),
+
+  tick: (runId: string) =>
+    api<{
+      dialed: boolean;
+      skipReason: string | null;
+      callSessionId: string | null;
+      companyName: string | null;
+      e164: string | null;
+      message: string;
+    }>(`/api/v1/auto-dialer/runs/${runId}/tick`, { method: "POST" }),
+
+  pause: (runId: string) =>
+    api<{ ok: boolean }>(`/api/v1/auto-dialer/runs/${runId}/pause`, { method: "POST" }),
+
+  resume: (runId: string) =>
+    api<{ ok: boolean }>(`/api/v1/auto-dialer/runs/${runId}/resume`, { method: "POST" }),
+
+  stop: (runId: string) =>
+    api<{ ok: boolean }>(`/api/v1/auto-dialer/runs/${runId}/stop`, { method: "POST" }),
+};
+
+export const ivrOutbound = {
+  overview: () => api<AiOutboundOverview>("/api/v1/ivr-outbound/overview"),
+
+  seedDemo: () =>
+    api<{
+      overview: AiOutboundOverview;
+      created: boolean;
+      message: string;
+    }>("/api/v1/ivr-outbound/seed-demo", { method: "POST" }),
 };
 
 // ---------------------------------------------------------------- KPI

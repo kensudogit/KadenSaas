@@ -73,7 +73,8 @@ public class CallService {
      */
     @Transactional
     public DialResult requestDial(AuthUser user, UUID phoneId, UUID campaignId,
-                                  UUID callTargetId, boolean aiAgentMode) {
+                                  UUID callTargetId, String conversationMode) {
+        String mode = ConversationMode.normalize(conversationMode);
 
         CustomerPhone phone = phones.findById(phoneId)
             .orElseThrow(() -> new IllegalArgumentException("電話番号が見つかりません"));
@@ -86,7 +87,7 @@ public class CallService {
         if (decision instanceof DialingGate.Decision.Blocked blocked) {
             // ★ 止めたことも記録する。dial_state = blocked は終端なので、
             //   二重発信の部分ユニークインデックスにも引っかからない
-            CallSession row = newSession(user, phone, campaignId, callTargetId, aiAgentMode);
+            CallSession row = newSession(user, phone, campaignId, callTargetId, mode);
             row.setDialState("blocked");
             row.setBlockedReason(blocked.reason());
             calls.save(row);
@@ -97,7 +98,7 @@ public class CallService {
             return new DialResult(row.getId(), false, blocked.reason(), blocked.detail());
         }
 
-        CallSession row = newSession(user, phone, campaignId, callTargetId, aiAgentMode);
+        CallSession row = newSession(user, phone, campaignId, callTargetId, mode);
         row.setDialState("queued");
 
         try {
@@ -118,7 +119,7 @@ public class CallService {
 
     private CallSession newSession(AuthUser user, CustomerPhone phone,
                                    UUID campaignId, UUID callTargetId,
-                                   boolean aiAgentMode) {
+                                   String conversationMode) {
         Tenant tenant = tenants.findById(user.tenantId()).orElseThrow();
         CallSession row = new CallSession();
         row.setTenantId(user.tenantId());
@@ -126,7 +127,8 @@ public class CallService {
         row.setCallTargetId(callTargetId);
         row.setCustomerId(phone.getCustomerId());
         row.setOperatorId(user.userId());
-        row.setAiAgentMode(aiAgentMode);
+        row.setConversationMode(conversationMode);
+        row.setAiAgentMode(ConversationMode.AI_AGENT.equals(conversationMode));
         row.setProvider("twilio");
         row.setDirection("outbound");
         // ★ 発信者番号はテナント設定から取る。画面から渡させない。

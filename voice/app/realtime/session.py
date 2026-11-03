@@ -117,6 +117,7 @@ class CallAudioSession:
             meta = await conn.fetchrow(
                 """
                 select cs.ai_agent_mode,
+                       cs.conversation_mode,
                        coalesce(c.script, '') as campaign_script,
                        coalesce(c.name, '') as campaign_name
                 from call_sessions cs
@@ -128,7 +129,9 @@ class CallAudioSession:
                 call_session_id,
             )
         if meta is not None:
-            ai_mode = bool(meta["ai_agent_mode"])
+            ai_mode = (meta.get("conversation_mode") == "ai_agent") or bool(
+                meta["ai_agent_mode"]
+            )
             campaign_script = meta["campaign_script"] or ""
             campaign_name = meta["campaign_name"] or ""
 
