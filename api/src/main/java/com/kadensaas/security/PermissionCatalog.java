@@ -113,6 +113,14 @@ public final class PermissionCatalog {
             "FAQ が無いテナント向け。架電データは増やさない",
             EVERYONE, "POST", "/api/v1/call-center/seed-demo"),
 
+        new Capability("ai_outbound.overview", "AI 架電デモの一覧を見る",
+            "サンプルキャンペーンとキュー待ちの架電先",
+            EVERYONE, "GET", "/api/v1/ai-outbound/overview"),
+
+        new Capability("ai_outbound.seed_demo", "AI 架電デモデータを登録する",
+            "03-1234-52xx の架空番号。冪等",
+            EVERYONE, "POST", "/api/v1/ai-outbound/seed-demo"),
+
         new Capability("callcenter.inquiries", "着信受付履歴を見る",
             "オペレーター支援の受付履歴。音声は学習に使わない",
             EVERYONE, "GET", "/api/v1/call-center/inquiries"),

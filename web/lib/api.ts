@@ -226,6 +226,38 @@ export const calls = {
     ),
 };
 
+// ---------------------------------------------------------------- AI 架電デモ
+
+export interface AiOutboundTargetRow {
+  targetId: string;
+  phoneId: string;
+  companyName: string;
+  contactName: string | null;
+  e164: string;
+  state: string;
+  doNotCall: boolean;
+  note: string | null;
+}
+
+export interface AiOutboundOverview {
+  campaignId: string | null;
+  campaignName: string | null;
+  script: string | null;
+  targets: AiOutboundTargetRow[];
+  pendingCount: number;
+}
+
+export const aiOutbound = {
+  overview: () => api<AiOutboundOverview>("/api/v1/ai-outbound/overview"),
+
+  seedDemo: () =>
+    api<{
+      overview: AiOutboundOverview;
+      created: boolean;
+      message: string;
+    }>("/api/v1/ai-outbound/seed-demo", { method: "POST" }),
+};
+
 // ---------------------------------------------------------------- KPI
 
 export interface KpiRow {

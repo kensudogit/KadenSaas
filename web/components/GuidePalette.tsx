@@ -206,8 +206,8 @@ export default function GuidePalette() {
               発信から KPI までを一本の線で扱う
             </h3>
             <p style={{ margin: 0, color: "var(--gp-body)", lineHeight: 1.75 }}>
-              顧客リスト → 発信 → 通話 → 録音 → 文字起こし → AI要約 →
-              架電結果 → 再架電 → KPI。テナント分離は PostgreSQL の RLS。
+              顧客リスト → 発信（人 / AI）→ 通話 → 録音 → 文字起こし →
+              AI 要約 → 架電結果 → 再架電 → KPI。テナント分離は PostgreSQL の RLS。
             </p>
             <Tags
               items={[
@@ -216,6 +216,7 @@ export default function GuidePalette() {
                 "FastAPI · 音声/AI",
                 "PostgreSQL · RLS",
                 "Twilio · Media Streams",
+                "ASR · LLM · TTS",
                 "Claude · 通話分析",
                 "Railway / AWS",
               ]}
@@ -238,12 +239,12 @@ export default function GuidePalette() {
                   <b>voice-web</b>（FastAPI） — Twilio の webhook と内部 API
                 </>,
                 <>
-                  <b>voice-media</b> — Media Streams の WebSocket。
-                  <b>必ず別サービス</b>で動かす
+                  <b>voice-media</b> — Media Streams（双方向）。
+                  AI 架電の TTS 返送もここ。<b>必ず別サービス</b>
                 </>,
                 <>
-                  <b>voice-jobs</b> — 録音の取得・保存期限切れの削除・AI 分析。
-                  公開しない
+                  <b>voice-jobs</b> — 録音・文字起こし後の AI 分析（要約）。
+                  通話中の LLM 応答とは別経路
                 </>,
                 <>
                   <b>web</b>（Next.js） — 画面
@@ -258,9 +259,9 @@ export default function GuidePalette() {
    ├─→ api      :8080   業務 API / スキーマ所有
    │              └─ PostgreSQL (RLS)
    └─→ voice-web:8001   /twilio/*  /internal/*
-                  ├─ voice-media   /media  (WebSocket)
-                  ├─ voice-jobs    録音 / 文字起こし / AI
-                  └─ S3 · Redis · Twilio · Claude`}</Code>
+                  ├─ voice-media   /media  (WebSocket 双方向)
+                  ├─ voice-jobs    録音 / 事後 AI 分析
+                  └─ S3 · Redis · Twilio · ASR · LLM · TTS`}</Code>
 
           <SectionLabel>SETUP — ローカル</SectionLabel>
           <Card>
@@ -310,6 +311,14 @@ export default function GuidePalette() {
                   <Code inline>{"${{KadenSaas.JWT_SECRET}}"}</Code> の参照で繋ぐ。
                   値がずれると「api では通るのに voice で 401」になります
                 </>,
+                <>
+                  <b>AI 架電</b> — voice に{" "}
+                  <Code inline>PUBLIC_WSS_URL</Code>（Media Stream）、
+                  <Code inline>ASR_PROVIDER</Code> / <Code inline>ASR_API_KEY</Code>、
+                  <Code inline>LLM_API_KEY</Code>、任意で{" "}
+                  <Code inline>TTS_PROVIDER=openai</Code> と{" "}
+                  <Code inline>TTS_API_KEY</Code>。TTS 未設定時は文字起こしのみ
+                </>,
               ]}
             />
           </Card>
@@ -329,8 +338,19 @@ export default function GuidePalette() {
                   電話番号は実在しない 03-1234-5xxx なので誤発信しません
                 </>,
                 <>
-                  <b>架電する</b> — 架電画面でキャンペーン ID を入れて
-                  「次の 1 件を受け取る」
+                  <b>人が架電</b> —{" "}
+                  <a href="/operator" style={linkStyle}>
+                    架電
+                  </a>
+                  でキャンペーン ID を入れて「次の 1 件を受け取る」
+                </>,
+                <>
+                  <b>AI 自動架電</b> —{" "}
+                  <a href="/ai-outbound" style={linkStyle}>
+                    AI 架電
+                  </a>
+                  を開く。初回はサンプル（03-1234-52xx）が自動登録され、一覧と
+                  スクリプトが表示されます。「次の 1 件を取る」→「AI で発信する」
                 </>,
                 <>
                   <b>コールセンターを確認</b> — ナビの
@@ -339,6 +359,40 @@ export default function GuidePalette() {
                   </a>
                   タブ。FAQ と受付履歴が空なら、同画面の
                   「コールセンター用サンプルを投入」（manager / admin）でデモデータだけ足せます
+                </>,
+              ]}
+            />
+          </Card>
+
+          <SectionLabel>AI 自動架電</SectionLabel>
+          <Card>
+            <Steps
+              items={[
+                <>
+                  <b>発信の関門は人架電と同じ。</b> api の DialingGate → queued →
+                  voice が Twilio 発信。<Code inline>aiAgentMode</Code> の通話だけ
+                  voice が相手発話 → LLM → TTS のループを回します
+                </>,
+                <>
+                  <b>1. サンプル</b> — 画面を開くと{" "}
+                  <Code inline>POST /api/v1/ai-outbound/seed-demo</Code>{" "}
+                  相当が空テナントで走り、キャンペーン「サンプル: AI
+                  自動架電」と 5 件の架電先が載ります（オペレーター可）。
+                  「サンプルを再登録」で冪等に再実行
+                </>,
+                <>
+                  <b>2. 試す</b> — 一覧で DNC 行（関門デモ）を確認し、
+                  pending の相手で「次の 1 件を取る」→「AI で発信する」
+                </>,
+                <>
+                  <b>3. 本番データ</b> — キャンペーンに{" "}
+                  <Code inline>script</Code>（会話の指示）を書き、
+                  通常どおり call_targets を積む。管理者の一括サンプル投入でも{" "}
+                  <Code inline>ai_agent_enabled</Code> 付きキャンペーンが 1 件入ります
+                </>,
+                <>
+                  <b>番号帯</b> — AI デモ専用は 03-1234-52xx、従来サンプルは
+                  03-1234-5xxx。いずれも架空です
                 </>,
               ]}
             />
@@ -398,6 +452,18 @@ export default function GuidePalette() {
                   テナントにナレッジが無いか、RLS で 0 行になっています。
                   管理者で「コールセンター用サンプルを投入」するか、
                   <Code inline>scripts/seed-dev.sql</Code> を流してください
+                </>,
+                <>
+                  <b>AI 架電が無音 / 応答しない</b> — Twilio・
+                  <Code inline>PUBLIC_WSS_URL</Code>、
+                  <Code inline>ASR_API_KEY</Code>、
+                  <Code inline>LLM_API_KEY</Code> を確認。TTS 無しでも
+                  文字起こしに AI 発話は残ります
+                </>,
+                <>
+                  <b>AI 架電の一覧が空</b> — api が未デプロイ（V17 以降）か
+                  401。ブラウザのネットワークで{" "}
+                  <Code inline>/api/v1/ai-outbound/overview</Code> を確認
                 </>,
               ]}
             />

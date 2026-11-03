@@ -90,8 +90,8 @@ public class SampleDataService {
 
         UUID campaignId = UUID.randomUUID();
         jdbc.update("""
-            insert into campaigns (id, tenant_id, name, status, script)
-            values (?, ?, ?, 'running', ?)
+            insert into campaigns (id, tenant_id, name, status, script, ai_agent_enabled)
+            values (?, ?, ?, 'running', ?, true)
             """, campaignId, tenantId, "サンプル: 新規開拓キャンペーン",
             "お世話になっております。○○社の△△と申します。\n"
             + "本日は通信費の見直しについてご案内のお電話です。");
