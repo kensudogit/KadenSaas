@@ -309,9 +309,12 @@ export default function GuidePalette() {
                   <b>superuser のままだと RLS が効きません</b>
                 </>,
                 <>
-                  <b>オートダイヤラーで DB エラー</b> —{" "}
-                  <Code inline>db/RAILWAY-FLYWAY.md</Code>。
-                  manager 以上は{" "}
+                  <b>Flyway checksum mismatch</b> — api に一時{" "}
+                  <Code inline>KADEN_FLYWAY_REPAIR_ON_START=true</Code> で 1 回
+                  Redeploy 後削除（<Code inline>db/RAILWAY-FLYWAY.md</Code>）
+                </>,
+                <>
+                  <b>オートダイヤラーで DB エラー</b> — manager 以上{" "}
                   <Code inline>/api/v1/admin/schema/diagnose</Code>
                 </>,
                 <>

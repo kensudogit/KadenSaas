@@ -30,18 +30,27 @@ Migration checksum mismatch for migration version 18
 ```
 
 **原因:** すでに Railway に適用された V18 SQL をリポジトリで書き換えた。
-**対応:** リポジトリは V18 を元に戻し、追加変更は **V19** に置く（本リポジトリの現行構成）。
-そのうえで **api を Redeploy** する。
+**対応（推奨・1 回だけ）:**
 
-まだ validate で落ちる場合のみ、Postgres で checksum を合わせる:
+1. リポジトリの **V18 を変更しない**（追加は V19 のみ）。最新 api を push。
+2. Railway **api** に一時的に Variables を追加:
+   ```env
+   KADEN_FLYWAY_REPAIR_ON_START=true
+   ```
+3. **Redeploy** → ログで `Started KadenApiApplication` を確認。
+4. **`KADEN_FLYWAY_REPAIR_ON_START` を削除**（または `false`）して再 Redeploy。
+
+repair は DB の checksum を **現在の JAR の V18** に合わせます。
+
+**手動で合わせる場合**（Query タブ）:
 
 ```sql
 UPDATE flyway_schema_history
-   SET checksum = -62650964
+   SET checksum = <Deploy ログの Resolved locally の値>
  WHERE version = '18';
 ```
 
-（値は Deploy ログの `Applied to database` の行を使う）
+例: `Resolved locally : -58241835` ならその整数をセット。
 
 ---
 

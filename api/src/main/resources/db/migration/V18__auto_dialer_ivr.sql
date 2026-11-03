@@ -1,5 +1,4 @@
 -- オートダイヤラー / IVR 自動架電
--- ★ 適用済み環境では checksum を変えない（Flyway validate）。冪等化は V19。
 
 alter table call_sessions
   add column if not exists conversation_mode text not null default 'operator';

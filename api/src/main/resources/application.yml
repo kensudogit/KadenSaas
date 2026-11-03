@@ -51,6 +51,9 @@ server:
   forward-headers-strategy: framework
 
 kaden:
+  flyway:
+    # ★ true のときだけ起動時に flyway repair → migrate（1 回限りの本番復旧用）
+    repair-on-start: ${KADEN_FLYWAY_REPAIR_ON_START:false}
   jwt:
     secret: ${JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
     ttl-minutes: ${JWT_TTL_MINUTES:120}
