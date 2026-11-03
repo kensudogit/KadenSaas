@@ -3,43 +3,44 @@
 /**
  * 画面共通のナビゲーション。
  *
- * ★ これまで各画面が自前で <nav> を書いていたため、画面ごとにリンクの
- *   顔ぶれが違っていた（顧客画面から分析へ行けない、など）。
- *   1 箇所にまとめて、どこからでも同じ場所へ行けるようにする。
- *
- * ★ 権限で出し分ける。ただしこれは「押しても 403 になるものを見せない」
- *   ための配慮であって、権限の実装ではない。ここを書き換えても
- *   サーバーが 403 を返す。判定はサーバーにしかない。
- *
- * ★ 現在地を色ではなく太字と下線で示す。色だけで区別すると、
- *   色覚特性によっては区別できない。
+ * ★ 自動架電（AI / オートダイヤル / IVR）は <details> にまとめ、ヘッダーの項目数を抑える。
  */
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { clearToken, getRole, type Role } from "@/lib/api";
 import BrandLogo from "@/components/BrandLogo";
 
 type Item = {
   href: string;
   label: string;
-  /** 表示してよい役割。省略時は全員 */
   roles?: Role[];
 };
 
-const ITEMS: Item[] = [
+const PRIMARY: Item[] = [
   { href: "/dashboard", label: "ダッシュボード" },
   { href: "/customers", label: "顧客リスト" },
   { href: "/operator", label: "架電" },
-  { href: "/ai-outbound", label: "AI 架電" },
-  { href: "/auto-dialer", label: "オートダイヤル" },
-  { href: "/ivr-outbound", label: "IVR 架電" },
   { href: "/call-center", label: "コールセンター" },
   { href: "/history", label: "架電履歴" },
   { href: "/analytics", label: "分析", roles: ["manager", "admin"] },
   { href: "/settings/telephony", label: "電話設定", roles: ["manager", "admin"] },
   { href: "/settings/users", label: "管理", roles: ["admin"] },
 ];
+
+const AUTO_OUTBOUND: Item[] = [
+  { href: "/ai-outbound", label: "AI 架電" },
+  { href: "/auto-dialer", label: "オートダイヤル" },
+  { href: "/ivr-outbound", label: "IVR 架電" },
+];
+
+const linkStyle = (active: boolean): CSSProperties => ({
+  fontSize: 14,
+  color: active ? "var(--fg)" : "var(--accent)",
+  fontWeight: active ? 700 : 400,
+  textDecoration: active ? "underline" : "none",
+  textUnderlineOffset: 4,
+});
 
 export default function AppNav() {
   const pathname = usePathname();
@@ -49,10 +50,14 @@ export default function AppNav() {
     setRole(getRole());
   }, []);
 
-  // ★ ログイン前と登録画面では出さない
   if (pathname === "/" || pathname === "/signup") return null;
 
-  const visible = ITEMS.filter((i) => !i.roles || (role && i.roles.includes(role)));
+  const visiblePrimary = PRIMARY.filter(
+    (i) => !i.roles || (role && i.roles.includes(role)),
+  );
+  const autoActive = AUTO_OUTBOUND.some(
+    (i) => pathname === i.href || pathname.startsWith(i.href + "/"),
+  );
 
   return (
     <header
@@ -90,23 +95,77 @@ export default function AppNav() {
           架電 SaaS
         </a>
 
-        <nav style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          {visible.map((item) => {
+        <nav
+          style={{
+            display: "flex",
+            gap: 16,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          {visiblePrimary.slice(0, 3).map((item) => {
             const active =
               pathname === item.href || pathname.startsWith(item.href + "/");
             return (
-              <a
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                style={{
-                  fontSize: 14,
-                  color: active ? "var(--fg)" : "var(--accent)",
-                  fontWeight: active ? 700 : 400,
-                  textDecoration: active ? "underline" : "none",
-                  textUnderlineOffset: 4,
-                }}
-              >
+              <a key={item.href} href={item.href} style={linkStyle(active)}>
+                {item.label}
+              </a>
+            );
+          })}
+
+          <details style={{ position: "relative" }}>
+            <summary
+              style={{
+                ...linkStyle(autoActive),
+                cursor: "pointer",
+                listStyle: "none",
+              }}
+            >
+              自動架電 ▾
+            </summary>
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                marginTop: 6,
+                padding: "8px 0",
+                minWidth: 160,
+                background: "var(--panel, #1a1a1a)",
+                border: "1px solid var(--line)",
+                borderRadius: 8,
+                zIndex: 50,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              {AUTO_OUTBOUND.map((item) => {
+                const active =
+                  pathname === item.href ||
+                  pathname.startsWith(item.href + "/");
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      ...linkStyle(active),
+                      padding: "6px 14px",
+                      display: "block",
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                );
+              })}
+            </div>
+          </details>
+
+          {visiblePrimary.slice(3).map((item) => {
+            const active =
+              pathname === item.href || pathname.startsWith(item.href + "/");
+            return (
+              <a key={item.href} href={item.href} style={linkStyle(active)}>
                 {item.label}
               </a>
             );

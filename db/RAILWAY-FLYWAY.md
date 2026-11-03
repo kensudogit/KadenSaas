@@ -54,6 +54,24 @@ UPDATE flyway_schema_history
 
 ---
 
+## permission denied for table auto_dialer_runs
+
+api は起動するが `POST /auto-dialer/runs` が 500 のとき、ログに:
+
+```text
+ERROR: permission denied for table auto_dialer_runs
+```
+
+**対応:** **V20** で `kaden_app` に GRANT する。**api を最新 Redeploy** する。
+
+手動（Query）:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.auto_dialer_runs TO kaden_app;
+```
+
+---
+
 ## オートダイヤラーの DB エラー
 
 本番 DB に **V18（`auto_dialer_runs` 等）** が入っていないとき、

@@ -52,10 +52,13 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<Map<String, String>> dataAccess(DataAccessException e) {
         log.error("DB エラー", e);
+        String hint = "データベースエラーです。マイグレーション（Flyway）の適用を確認してください";
+        if (e.getMessage() != null && e.getMessage().contains("permission denied")) {
+            hint = "DB 権限不足です。api を最新に Redeploy し Flyway V20（auto_dialer_runs の GRANT）"
+                + " を適用してください（db/RAILWAY-FLYWAY.md）";
+        }
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(Map.of(
-                "error", "internal_error",
-                "message", "データベースエラーです。マイグレーション（Flyway）の適用を確認してください"));
+            .body(Map.of("error", "internal_error", "message", hint));
     }
 
     @ExceptionHandler(PhoneNumbers.InvalidNumberException.class)

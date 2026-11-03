@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SchemaDiagnosticsService {
 
     /** オートダイヤラーに必要な Flyway バージョン。 */
-    public static final int REQUIRED_FOR_AUTO_DIALER = 19;
+    public static final int REQUIRED_FOR_AUTO_DIALER = 20;
 
     public record Report(
         Integer flywayLatestVersion,
